@@ -153,7 +153,7 @@ func _bite(amount: int) -> void:
 
 func _facing() -> String:
 	if abs(last_direction.x) >= abs(last_direction.y):
-		anim.flip_h = last_direction.x < 0.0
+		anim.flip_h = last_direction.x > 0.0
 		return "side"
 	anim.flip_h = false
 	return "front" if last_direction.y > 0.0 else "back"
