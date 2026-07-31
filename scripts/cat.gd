@@ -1,16 +1,20 @@
 extends CharacterBody2D
 
-@export var speed: int = 200
-
 @onready var animation_player: AnimationPlayer = $AnimationPlayer
+@onready var dash_timer: Timer = $DashTimer
+@onready var sprite_2d: Sprite2D = $Sprite2D
+
+var normal_speed: float = 200
+var dash_speed: float = normal_speed * 1.5
+var speed: float = normal_speed
 
 # Called when the node enters the scene tree for the first time.
 func _ready() -> void:
 	pass # Replace with function body.
 
-# Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(_delta: float) -> void:
-	pass
+	if Input.is_action_just_pressed("dash"):
+		dash()
 
 func _physics_process(_delta: float) -> void:
 	var input_direction = Input.get_vector("left", "right", "forward", "backward").normalized()
@@ -30,3 +34,12 @@ func _physics_process(_delta: float) -> void:
 				animation_player.play("walk_front")
 	else:
 		animation_player.play("idle")
+
+func dash() -> void:
+	dash_timer.start()
+	speed = dash_speed
+	sprite_2d.material.set_shader_parameter("active", true)
+
+func _on_dash_timer_timeout() -> void:
+	speed = normal_speed
+	sprite_2d.material.set_shader_parameter("active", false)
