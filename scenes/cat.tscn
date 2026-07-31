@@ -1,7 +1,13 @@
-[gd_scene load_steps=4 format=3 uid="uid://bfmb6luyhikp2"]
+[gd_scene load_steps=6 format=3 uid="uid://bfmb6luyhikp2"]
 
 [ext_resource type="Script" uid="uid://bownxobcoq6jm" path="res://scripts/cat.gd" id="1_myi5k"]
 [ext_resource type="SpriteFrames" uid="uid://bcatframes01" path="res://sprites/cat_frames.tres" id="2_frames"]
+[ext_resource type="Shader" uid="uid://jbco1ijydx3f" path="res://shaders/cat.gdshader" id="3_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_cat"]
+shader = ExtResource("3_shader")
+shader_parameter/active = false
+shader_parameter/flash_color = Color(1, 1, 1, 1)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_eoth6"]
 size = Vector2(13, 9)
@@ -10,6 +16,7 @@ size = Vector2(13, 9)
 script = ExtResource("1_myi5k")
 
 [node name="Anim" type="AnimatedSprite2D" parent="."]
+material = SubResource("ShaderMaterial_cat")
 sprite_frames = ExtResource("2_frames")
 animation = &"idle_front"
 autoplay = "idle_front"

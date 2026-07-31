@@ -34,6 +34,7 @@ func _physics_process(delta: float) -> void:
 		_play("run_" + _facing())
 		if dash_time_left <= 0.0:
 			is_dashing = false
+			_set_flash(false)
 		return
 
 	var input_direction := Input.get_vector("left", "right", "forward", "backward")
@@ -46,6 +47,7 @@ func _physics_process(delta: float) -> void:
 		is_dashing = true
 		dash_time_left = dash_duration
 		dash_cd_left = dash_cooldown
+		_set_flash(true)
 		return
 
 	velocity = input_direction * speed
@@ -66,6 +68,10 @@ func _facing() -> String:
 func _play(name: String) -> void:
 	if anim.animation != name:
 		anim.play(name)
+
+func _set_flash(on: bool) -> void:
+	if anim.material != null:
+		anim.material.set_shader_parameter("active", on)
 
 func take_damage(amount: int) -> bool:
 	if health <= 0:
