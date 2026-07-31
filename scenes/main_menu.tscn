@@ -49,6 +49,16 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 12
 text = "PLAY"
 
+[node name="Tutorial" type="Button" parent="Center/Box"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "TUTORIAL"
+
+[node name="Shop" type="Button" parent="Center/Box"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "SHOP"
+
 [node name="Quit" type="Button" parent="Center/Box"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
