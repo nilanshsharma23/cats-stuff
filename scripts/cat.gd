@@ -7,6 +7,7 @@ extends CharacterBody2D
 @export var dash_cooldown: float = 0.6
 
 @onready var anim: AnimatedSprite2D = $Anim
+@onready var health_bar: TextureProgressBar = $UI/Control/HealthBar
 
 var health: int = max_health
 var last_direction: Vector2 = Vector2.DOWN
@@ -18,6 +19,8 @@ var dash_direction: Vector2 = Vector2.DOWN
 
 func _ready() -> void:
 	add_to_group("player")
+	health_bar.max_value = max_health
+	health_bar.value = health
 
 func _physics_process(delta: float) -> void:
 	if dead:
@@ -78,6 +81,7 @@ func take_damage(amount: int) -> bool:
 		return false
 	health -= amount
 	modulate = Color(1, 0.6, 0.6)
+	health_bar.value = health
 	create_tween().tween_property(self, "modulate", Color.WHITE, 0.2)
 	if health <= 0:
 		health = 0

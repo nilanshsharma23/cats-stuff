@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://bq7ratscene01"]
+[gd_scene format=3 uid="uid://bq7ratscene01"]
 
 [ext_resource type="Script" uid="uid://cq7ratscript01" path="res://scripts/rat.gd" id="1_rat"]
 [ext_resource type="SpriteFrames" uid="uid://bratframes01" path="res://sprites/rat_frames.tres" id="2_frames"]

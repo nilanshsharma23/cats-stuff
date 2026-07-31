@@ -1,39 +1,39 @@
-[gd_scene load_steps=5 format=3 uid="uid://c7etibd2nmldl"]
+[gd_scene format=3 uid="uid://c7etibd2nmldl"]
 
 [ext_resource type="PackedScene" uid="uid://bfmb6luyhikp2" path="res://scenes/cat.tscn" id="1_nnsk1"]
 [ext_resource type="PackedScene" uid="uid://bq7ratscene01" path="res://scenes/rat.tscn" id="2_rat"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_h"]
-size = Vector2(520, 20)
+size = Vector2(276, 20)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_v"]
-size = Vector2(20, 270)
+size = Vector2(20, 144)
 
 [node name="World" type="Node2D" unique_id=1714561258]
 
 [node name="Cat" parent="." unique_id=1549186289 instance=ExtResource("1_nnsk1")]
 position = Vector2(240, 135)
 
-[node name="Rat" parent="." instance=ExtResource("2_rat")]
-position = Vector2(380, 210)
+[node name="Rat" parent="." unique_id=185890289 instance=ExtResource("2_rat")]
+position = Vector2(200, 72)
 
-[node name="Rat2" parent="." instance=ExtResource("2_rat")]
+[node name="Rat2" parent="." unique_id=89066028 instance=ExtResource("2_rat")]
 position = Vector2(90, 60)
 
-[node name="Bounds" type="StaticBody2D" parent="."]
+[node name="Bounds" type="StaticBody2D" parent="." unique_id=372267294]
 
-[node name="Top" type="CollisionShape2D" parent="Bounds"]
-position = Vector2(240, -10)
+[node name="Top" type="CollisionShape2D" parent="Bounds" unique_id=2094609650]
+position = Vector2(118, -10)
 shape = SubResource("RectangleShape2D_h")
 
-[node name="Bottom" type="CollisionShape2D" parent="Bounds"]
-position = Vector2(240, 280)
+[node name="Bottom" type="CollisionShape2D" parent="Bounds" unique_id=820085589]
+position = Vector2(120, 152)
 shape = SubResource("RectangleShape2D_h")
 
-[node name="Left" type="CollisionShape2D" parent="Bounds"]
-position = Vector2(-10, 135)
+[node name="Left" type="CollisionShape2D" parent="Bounds" unique_id=1882308169]
+position = Vector2(-10, 72)
 shape = SubResource("RectangleShape2D_v")
 
-[node name="Right" type="CollisionShape2D" parent="Bounds"]
-position = Vector2(490, 135)
+[node name="Right" type="CollisionShape2D" parent="Bounds" unique_id=506084695]
+position = Vector2(264, 72)
 shape = SubResource("RectangleShape2D_v")
