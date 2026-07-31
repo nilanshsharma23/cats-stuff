@@ -1,0 +1,198 @@
+[gd_resource type="SpriteFrames" load_steps=23 format=3 uid="uid://bcatframes01"]
+
+[ext_resource type="Texture2D" path="res://sprites/cat.png" id="1_tex"]
+
+[sub_resource type="AtlasTexture" id="c_idle_side_0"]
+atlas = ExtResource("1_tex")
+region = Rect2(160, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_idle_back_0"]
+atlas = ExtResource("1_tex")
+region = Rect2(160, 32, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_idle_front_0"]
+atlas = ExtResource("1_tex")
+region = Rect2(160, 64, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_walk_side_0"]
+atlas = ExtResource("1_tex")
+region = Rect2(128, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_walk_side_1"]
+atlas = ExtResource("1_tex")
+region = Rect2(160, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_walk_side_2"]
+atlas = ExtResource("1_tex")
+region = Rect2(192, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_walk_back_0"]
+atlas = ExtResource("1_tex")
+region = Rect2(128, 32, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_walk_back_1"]
+atlas = ExtResource("1_tex")
+region = Rect2(160, 32, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_walk_back_2"]
+atlas = ExtResource("1_tex")
+region = Rect2(192, 32, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_walk_front_0"]
+atlas = ExtResource("1_tex")
+region = Rect2(128, 64, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_walk_front_1"]
+atlas = ExtResource("1_tex")
+region = Rect2(160, 64, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_walk_front_2"]
+atlas = ExtResource("1_tex")
+region = Rect2(192, 64, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_run_side_0"]
+atlas = ExtResource("1_tex")
+region = Rect2(128, 96, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_run_side_1"]
+atlas = ExtResource("1_tex")
+region = Rect2(160, 96, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_run_side_2"]
+atlas = ExtResource("1_tex")
+region = Rect2(192, 96, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_run_front_0"]
+atlas = ExtResource("1_tex")
+region = Rect2(128, 128, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_run_front_1"]
+atlas = ExtResource("1_tex")
+region = Rect2(160, 128, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_run_front_2"]
+atlas = ExtResource("1_tex")
+region = Rect2(192, 128, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_run_back_0"]
+atlas = ExtResource("1_tex")
+region = Rect2(128, 32, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_run_back_1"]
+atlas = ExtResource("1_tex")
+region = Rect2(160, 32, 32, 32)
+
+[sub_resource type="AtlasTexture" id="c_run_back_2"]
+atlas = ExtResource("1_tex")
+region = Rect2(192, 32, 32, 32)
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("c_idle_side_0")
+}],
+"loop": true,
+"name": &"idle_side",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("c_idle_back_0")
+}],
+"loop": true,
+"name": &"idle_back",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("c_idle_front_0")
+}],
+"loop": true,
+"name": &"idle_front",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("c_walk_side_0")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_walk_side_1")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_walk_side_2")
+}],
+"loop": true,
+"name": &"walk_side",
+"speed": 8.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("c_walk_back_0")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_walk_back_1")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_walk_back_2")
+}],
+"loop": true,
+"name": &"walk_back",
+"speed": 8.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("c_walk_front_0")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_walk_front_1")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_walk_front_2")
+}],
+"loop": true,
+"name": &"walk_front",
+"speed": 8.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("c_run_side_0")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_run_side_1")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_run_side_2")
+}],
+"loop": true,
+"name": &"run_side",
+"speed": 13.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("c_run_front_0")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_run_front_1")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_run_front_2")
+}],
+"loop": true,
+"name": &"run_front",
+"speed": 13.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("c_run_back_0")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_run_back_1")
+}, {
+"duration": 1.0,
+"texture": SubResource("c_run_back_2")
+}],
+"loop": true,
+"name": &"run_back",
+"speed": 13.0
+}]
