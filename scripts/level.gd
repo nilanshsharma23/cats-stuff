@@ -8,12 +8,59 @@ extends Node2D
 @onready var game_over: Control = $UI/GameOver
 @onready var banner: Label = $UI/Banner
 
+# Enemy roster. Each entry names a base scene ("rat"/"frog") and a config
+# dictionary applied on spawn (stats + tint + scale), so the two sprite rigs
+# yield a whole cast of distinct foes.
+var ROSTER := {
+	"rat": {
+		"scene": "rat",
+		"cfg": {"max_health": 2, "move_speed": 120.0, "nibble_damage": 1,
+			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 12}
+	},
+	"scurrier": {
+		"scene": "rat",
+		"cfg": {"max_health": 1, "move_speed": 176.0, "nibble_damage": 1,
+			"dash_chance": 0.82, "dash_cooldown_min": 0.7, "dash_cooldown_max": 1.4,
+			"tint": Color(0.72, 1.0, 0.55), "body_scale": 0.6, "score_value": 10}
+	},
+	"brute": {
+		"scene": "rat",
+		"cfg": {"max_health": 7, "move_speed": 74.0, "nibble_damage": 2,
+			"nibble_range": 22.0, "dash_chance": 0.25, "knockback_resist": 0.6,
+			"tint": Color(1.0, 0.5, 0.42), "body_scale": 1.08, "score_value": 32}
+	},
+	"frog": {
+		"scene": "frog",
+		"cfg": {"max_health": 3, "move_speed": 88.0, "aoe_damage": 1,
+			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 18}
+	},
+	"spitter": {
+		"scene": "frog",
+		"cfg": {"max_health": 2, "move_speed": 104.0, "croak_cooldown": 1.2,
+			"croak_range": 56.0, "aoe_radius": 34.0, "croak_windup": 0.42,
+			"tint": Color(0.5, 0.82, 1.0), "body_scale": 0.7, "score_value": 22}
+	},
+	"boss": {
+		"scene": "rat",
+		"cfg": {"is_boss": true, "max_health": 96, "move_speed": 96.0,
+			"nibble_damage": 3, "nibble_range": 30.0, "nibble_interval": 0.55,
+			"dash_chance": 0.9, "dash_windup": 0.5, "dash_speed": 300.0,
+			"dash_cooldown_min": 1.0, "dash_cooldown_max": 1.8,
+			"knockback_resist": 0.9, "tint": Color(0.85, 0.4, 1.0),
+			"body_scale": 2.3, "score_value": 600}
+	},
+}
+
+const BOSS_NAME := "THE RAT KING"
+
 var waves: Array = []
 var wave_index: int = -1
 var alive: int = 0
 var cleared: bool = false
+var boss_active: bool = false
 var rng := RandomNumberGenerator.new()
 var score: int = 0
+var kills: int = 0
 var best_record: int = 0
 var coins: int = 0
 var glare_level: int = 1
@@ -27,9 +74,11 @@ var tutorial_step: int = 0
 var last_earned: int = 0
 var result_path: String = ""
 var reward_timer: float = 0.0
-var style_label: Label
-var record_label: Label
+
+var wave_label: Label
+var enemies_label: Label
 var score_label: Label
+var combo_label: Label
 var reward_label: Label
 var result_title: Label
 var result_summary: Label
@@ -44,6 +93,9 @@ var shop_panel: Control
 var shop_text: Label
 var shop_status: Label
 var upgrade_button: Button
+var boss_panel: Control
+var boss_fill: ColorRect
+var boss_bar_width: float = 160.0
 
 func _ready() -> void:
 	get_tree().paused = false
@@ -54,6 +106,7 @@ func _ready() -> void:
 	banner.modulate.a = 0.0
 	_build_result_panel()
 	_build_hud()
+	_build_boss_bar()
 	_build_shop_panel()
 	_build_tutorial_panel()
 	var cat := get_tree().get_first_node_in_group("player")
@@ -77,16 +130,41 @@ func _process(delta: float) -> void:
 		reward_label.modulate.a = clamp(reward_timer, 0.0, 1.0)
 	else:
 		reward_label.modulate.a = 0.0
+	_update_boss_bar()
 	_refresh_hud()
 
 func _build_waves() -> void:
+	# Level 1: clear 3 waves to advance. Level 2: 5 waves, then the boss.
 	if level_id == 1:
 		if tutorial_enabled:
-			waves = [[ ["rat", 1, false] ], [ ["rat", 3, false] ], [ ["rat", 5, true], ["frog", 1, false] ]]
+			waves = [
+				[["rat", 3]],
+				[["rat", 4], ["scurrier", 3]],
+				[["rat", 4], ["scurrier", 4], ["frog", 1]],
+			]
 		else:
-			waves = [[ ["rat", 3, false] ], [ ["rat", 5, false] ], [ ["rat", 6, true], ["frog", 1, false] ]]
+			waves = [
+				[["rat", 5]],
+				[["rat", 5], ["scurrier", 4]],
+				[["rat", 4], ["scurrier", 5], ["frog", 2]],
+			]
 	else:
-		waves = [[ ["rat", 6, true], ["frog", 1, false] ], [ ["rat", 8, true], ["frog", 2, false] ], [ ["rat", 10, true], ["frog", 3, false] ], [ ["rat", 12, true], ["frog", 4, false] ]]
+		waves = [
+			[["scurrier", 8], ["frog", 2]],
+			[["rat", 6], ["brute", 1], ["frog", 2]],
+			[["scurrier", 8], ["spitter", 3]],
+			[["rat", 6], ["brute", 2], ["spitter", 2]],
+			[["scurrier", 10], ["brute", 2], ["frog", 3]],
+			[["boss", 1], ["scurrier", 4]],
+		]
+
+func _is_boss_wave(index: int) -> bool:
+	if index < 0 or index >= waves.size():
+		return false
+	for entry in waves[index]:
+		if String(entry[0]) == "boss":
+			return true
+	return false
 
 func _next_wave() -> void:
 	if cleared:
@@ -95,27 +173,37 @@ func _next_wave() -> void:
 	if wave_index >= waves.size():
 		_level_cleared()
 		return
-	_show_banner("WAVE %d" % (wave_index + 1))
-	_set_reward("Rank high. Cash out harder.")
+	if _is_boss_wave(wave_index):
+		boss_active = true
+		_show_banner(BOSS_NAME)
+		_set_reward("Final boss. End it in style.")
+	else:
+		_show_banner("WAVE %d" % (wave_index + 1))
+		_set_reward("Rank high. Cash out harder.")
 	for entry in waves[wave_index]:
-		var type := String(entry[0])
+		var key := String(entry[0])
 		var count := int(entry[1])
-		var pins := bool(entry[2]) if entry.size() > 2 else false
 		for i in count:
-			_spawn(type, pins)
+			_spawn(key)
 
-func _spawn(type: String, pins: bool) -> void:
-	var scene: PackedScene = rat_scene if type == "rat" else frog_scene
+func _spawn(key: String) -> void:
+	if not ROSTER.has(key):
+		return
+	var data: Dictionary = ROSTER[key]
+	var scene: PackedScene = rat_scene if String(data["scene"]) == "rat" else frog_scene
 	if scene == null:
 		return
 	var e := scene.instantiate()
+	if e.has_method("configure"):
+		e.configure(data["cfg"])
 	e.position = _spawn_point()
-	if type == "rat":
-		e.set("roots_player", pins)
 	add_child(e)
 	alive += 1
 	if e.has_signal("died"):
-		e.died.connect(_on_enemy_died)
+		if bool(data["cfg"].get("is_boss", false)):
+			e.died.connect(_on_boss_died)
+		else:
+			e.died.connect(_on_enemy_died.bind(e))
 
 func _spawn_point() -> Vector2:
 	var cat := get_tree().get_first_node_in_group("player")
@@ -124,17 +212,33 @@ func _spawn_point() -> Vector2:
 	var max_pos := Vector2(226, 116)
 	for i in 24:
 		var p := Vector2(rng.randf_range(min_pos.x, max_pos.x), rng.randf_range(min_pos.y, max_pos.y))
-		if p.distance_to(cat_pos) > 52.0:
+		if p.distance_to(cat_pos) > 58.0:
 			return p
 	return Vector2(rng.randf_range(min_pos.x, max_pos.x), rng.randf_range(min_pos.y, max_pos.y))
 
-func _on_enemy_died() -> void:
+func _on_enemy_died(enemy: Node) -> void:
 	alive -= 1
-	score += 12 + wave_index * 5
+	kills += 1
+	var value: int = 12
+	if enemy != null and is_instance_valid(enemy):
+		value = int(enemy.get("score_value"))
+	score += value + wave_index * 4
 	_on_style_event("enemy_down", 14)
-	if alive <= 0 and not cleared:
+	if alive <= 0 and not cleared and not boss_active:
 		_award_wave_clear()
 		call_deferred("_next_wave")
+
+func _on_boss_died() -> void:
+	if cleared:
+		return
+	boss_active = false
+	kills += 1
+	score += 600
+	style_meter += 40.0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e) and e != null and not e.is_in_group("boss"):
+			e.queue_free()
+	_level_cleared()
 
 func _award_wave_clear() -> void:
 	var bonus: int = 28 + wave_index * 14 + _rank_bonus()
@@ -145,7 +249,8 @@ func _award_wave_clear() -> void:
 
 func _level_cleared() -> void:
 	cleared = true
-	_finish_run("LEVEL CLEAR", true)
+	var final := next_level_path == ""
+	_finish_run("VICTORY!" if final else "LEVEL CLEAR", true)
 
 func _on_cat_died() -> void:
 	_finish_run("YOU GOT CLIPPED", false)
@@ -173,7 +278,7 @@ func _to_menu() -> void:
 func _show_banner(text: String) -> void:
 	banner.text = text
 	banner.modulate.a = 1.0
-	create_tween().tween_property(banner, "modulate:a", 0.0, 1.2)
+	create_tween().tween_property(banner, "modulate:a", 0.0, 1.4)
 
 func _on_style_event(kind: String, amount: int) -> void:
 	if amount < 0:
@@ -182,7 +287,8 @@ func _on_style_event(kind: String, amount: int) -> void:
 		no_glare_chain = 0
 		style_meter = max(style_meter + amount, 0.0)
 		style_timeout = 1.0
-		_set_reward("Glare saved you. Style taxed.")
+		if kind == "glare":
+			_set_reward("Glare saved you. Style taxed.")
 		return
 	if kind == "paw_hit" or kind == "paw_kill" or kind == "dash" or kind == "enemy_down":
 		no_glare_chain += 1
@@ -243,43 +349,50 @@ func _rank_coin_multiplier() -> float:
 	return 0.18
 
 func _build_hud() -> void:
-	var box := VBoxContainer.new()
-	box.name = "RunHUD"
-	box.position = Vector2(7, 43)
-	box.custom_minimum_size = Vector2(124, 42)
-	box.add_theme_constant_override("separation", 0)
-	$UI.add_child(box)
-	style_label = _make_label("Style", Color(1.0, 0.82, 0.25, 1.0), 13)
-	score_label = _make_label("Score", Color(0.85, 0.9, 1.0, 1.0), 8)
-	record_label = _make_label("Record", Color(0.72, 0.78, 0.9, 1.0), 8)
-	box.add_child(style_label)
-	box.add_child(score_label)
-	box.add_child(record_label)
-	reward_label = Label.new()
-	reward_label.name = "Reward"
-	reward_label.position = Vector2(7, 88)
-	reward_label.custom_minimum_size = Vector2(190, 16)
-	reward_label.add_theme_font_size_override("font_size", 8)
-	reward_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.85, 1.0))
+	wave_label = _hud_label(Vector2(150, 6), Vector2(100, 12), Color(0.95, 0.92, 0.7, 1.0), 10, HORIZONTAL_ALIGNMENT_RIGHT)
+	enemies_label = _hud_label(Vector2(150, 19), Vector2(100, 10), Color(1.0, 0.62, 0.55, 1.0), 9, HORIZONTAL_ALIGNMENT_RIGHT)
+	combo_label = _hud_label(Vector2(6, 118), Vector2(140, 10), Color(1.0, 0.82, 0.25, 1.0), 9, HORIZONTAL_ALIGNMENT_LEFT)
+	score_label = _hud_label(Vector2(6, 130), Vector2(200, 10), Color(0.85, 0.9, 1.0, 1.0), 8, HORIZONTAL_ALIGNMENT_LEFT)
+	reward_label = _hud_label(Vector2(28, 98), Vector2(200, 12), Color(0.5, 1.0, 0.85, 1.0), 8, HORIZONTAL_ALIGNMENT_CENTER)
 	reward_label.modulate.a = 0.0
-	$UI.add_child(reward_label)
 	_refresh_hud()
 
-func _make_label(node_name: String, color: Color, font_size: int) -> Label:
+func _hud_label(pos: Vector2, box: Vector2, color: Color, font_size: int, align: int) -> Label:
 	var label := Label.new()
-	label.name = node_name
+	label.position = pos
+	label.size = box
+	label.custom_minimum_size = box
 	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	label.add_theme_constant_override("outline_size", 3)
 	label.add_theme_font_size_override("font_size", font_size)
+	label.horizontal_alignment = align
+	$UI.add_child(label)
 	return label
 
+func _normal_wave_count() -> int:
+	var count := waves.size()
+	if count > 0 and _is_boss_wave(count - 1):
+		count -= 1
+	return count
+
 func _refresh_hud() -> void:
-	if style_label == null:
+	if wave_label == null:
 		return
+	var boss_shown: bool = boss_panel != null and boss_panel.visible
+	if boss_shown:
+		wave_label.text = ""
+		enemies_label.text = ""
+	else:
+		wave_label.text = "WAVE %d / %d" % [clampi(wave_index + 1, 1, _normal_wave_count()), _normal_wave_count()]
+		enemies_label.text = "LEFT %d" % max(alive, 0)
+	score_label.text = "SCORE %d   KILLS %d   COINS %d" % [score, kills, coins]
 	var rank := _style_rank()
-	style_label.text = "STYLE %s  %.0f" % [rank, style_meter]
-	score_label.text = "SCORE %d  CHAIN %d" % [score, no_glare_chain]
-	record_label.text = "BEST %d  COINS %d" % [best_record, coins]
-	style_label.add_theme_color_override("font_color", _rank_color(rank))
+	if no_glare_chain > 1:
+		combo_label.text = "STYLE %s   COMBO x%d" % [rank, no_glare_chain]
+	else:
+		combo_label.text = "STYLE %s" % rank
+	combo_label.add_theme_color_override("font_color", _rank_color(rank))
 
 func _rank_color(rank: String) -> Color:
 	if rank == "SSS":
@@ -300,6 +413,45 @@ func _set_reward(text: String) -> void:
 	reward_label.text = text
 	reward_timer = 1.8
 	reward_label.modulate.a = 1.0
+
+func _build_boss_bar() -> void:
+	boss_panel = Control.new()
+	boss_panel.name = "BossBar"
+	boss_panel.visible = false
+	boss_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$UI.add_child(boss_panel)
+	var name_label := Label.new()
+	name_label.position = Vector2(48, 3)
+	name_label.size = Vector2(160, 10)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.add_theme_font_size_override("font_size", 8)
+	name_label.add_theme_color_override("font_color", Color(1.0, 0.55, 1.0, 1.0))
+	name_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	name_label.add_theme_constant_override("outline_size", 3)
+	name_label.text = BOSS_NAME
+	boss_panel.add_child(name_label)
+	var frame := ColorRect.new()
+	frame.position = Vector2(48, 13)
+	frame.size = Vector2(boss_bar_width, 6)
+	frame.color = Color(0.1, 0.02, 0.08, 0.9)
+	boss_panel.add_child(frame)
+	boss_fill = ColorRect.new()
+	boss_fill.position = Vector2(49, 14)
+	boss_fill.size = Vector2(boss_bar_width - 2.0, 4)
+	boss_fill.color = Color(0.95, 0.2, 0.55, 1.0)
+	boss_panel.add_child(boss_fill)
+
+func _update_boss_bar() -> void:
+	if boss_panel == null:
+		return
+	var boss := get_tree().get_first_node_in_group("boss")
+	if boss == null or not is_instance_valid(boss):
+		boss_panel.visible = false
+		return
+	var mh: float = maxf(1.0, float(boss.get("max_health")))
+	var hp: float = clampf(float(boss.get("health")), 0.0, mh)
+	boss_panel.visible = true
+	boss_fill.size = Vector2((boss_bar_width - 2.0) * (hp / mh), 4)
 
 func _build_result_panel() -> void:
 	for child in game_over.get_children():
@@ -328,6 +480,7 @@ func _build_result_panel() -> void:
 	box.add_child(result_title)
 	result_summary = Label.new()
 	result_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	result_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	result_summary.custom_minimum_size = Vector2(216, 34)
 	result_summary.add_theme_font_size_override("font_size", 8)
 	result_summary.add_theme_color_override("font_color", Color(0.93, 0.9, 0.78, 1.0))
@@ -350,20 +503,17 @@ func _finish_run(title: String, success: bool) -> void:
 	result_title.text = title
 	result_path = next_level_path if success and next_level_path != "" else "res://scenes/level1.tscn"
 	result_continue.text = "NEXT LEVEL" if success and next_level_path != "" else "PLAY AGAIN"
-	result_continue.visible = success
+	result_continue.visible = true
 	result_summary.text = _result_summary(success)
 	game_over.visible = true
 	get_tree().paused = true
-	if result_continue.visible:
-		result_continue.grab_focus()
-	else:
-		result_retry.grab_focus()
+	result_continue.grab_focus()
 
 func _result_summary(success: bool) -> String:
 	var rank := _style_rank()
 	var no_glare_bonus: int = 75 if glare_uses == 0 else maxi(0, 45 - glare_uses * 12)
 	var clear_bonus: int = 120 if success else 0
-	return "Rank %s  Score %d  Style %.0f\nNo glare bonus %d  Clear bonus %d\nCoins earned +%d  Total %d" % [rank, score, style_meter, no_glare_bonus, clear_bonus, last_earned, coins]
+	return "Rank %s   Score %d   Kills %d\nNo-glare bonus %d   Clear bonus %d\nCoins earned +%d   Total %d" % [rank, score, kills, no_glare_bonus, clear_bonus, last_earned, coins]
 
 func _build_shop_panel() -> void:
 	shop_panel = Control.new()
@@ -384,6 +534,7 @@ func _build_shop_panel() -> void:
 	center.add_child(box)
 	shop_text = Label.new()
 	shop_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	shop_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	shop_text.custom_minimum_size = Vector2(216, 38)
 	shop_text.add_theme_font_size_override("font_size", 9)
 	shop_text.add_theme_color_override("font_color", Color(1.0, 0.92, 0.72, 1.0))
@@ -443,7 +594,7 @@ func _upgrade_glare() -> void:
 		result_summary.text = _result_summary(cleared)
 
 func _refresh_shop(message: String = "") -> void:
-	var stuns := [0.2, 0.5, 0.75]
+	var stuns := [0.35, 0.6, 0.85]
 	var costs := [0, 60, 140]
 	var text := "SHOP\nCoins: %d   Glare L%d %.2fs" % [coins, glare_level, stuns[glare_level - 1]]
 	if glare_level < 3:
@@ -477,6 +628,7 @@ func _build_tutorial_panel() -> void:
 	center.add_child(box)
 	tutorial_text = Label.new()
 	tutorial_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tutorial_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tutorial_text.custom_minimum_size = Vector2(218, 62)
 	tutorial_text.add_theme_font_size_override("font_size", 9)
 	tutorial_text.add_theme_color_override("font_color", Color(1.0, 0.93, 0.7, 1.0))
@@ -488,10 +640,10 @@ func _build_tutorial_panel() -> void:
 
 func _show_tutorial_step() -> void:
 	var steps := [
-		"Time stop. The rat is real, but it waits while you learn. Move with WASD or arrows and aim with the mouse.",
-		"Left click swipes. Paw hits and kills build rank, score, and coins much faster than panic glare.",
-		"Space dashes through danger. Right click glares to stun, but glare cuts style and trims your bonus.",
-		"Pinned by a rat means no movement or attacks until the gold sparkles end. Read the bite circle and dash lane."
+		"Time stop. The swarm waits while you learn. Move with WASD or arrows and aim with the mouse.",
+		"Left click swipes the paw. Hits and kills build your STYLE rank, score, and coins fast.",
+		"Space dashes through danger and dodges hits. Chain kills without panicking to climb the ranks.",
+		"Right click glares to stun a pack, but glare drops your style and trims the payout. Now go hunt.",
 	]
 	tutorial_step = clampi(tutorial_step, 0, steps.size() - 1)
 	tutorial_text.text = steps[tutorial_step]

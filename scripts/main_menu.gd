@@ -166,7 +166,7 @@ func _make_button(text: String) -> Button:
 	return button
 
 func _refresh_shop(message: String = "") -> void:
-	var stuns := [0.2, 0.5, 0.75]
+	var stuns := [0.35, 0.6, 0.85]
 	var costs := [0, 60, 140]
 	var text := "SHOP\nCoins: %d   Best: %d\nGlare L%d: %.2fs paralyze" % [coins, best_score, glare_level, stuns[glare_level - 1]]
 	if glare_level < 3:

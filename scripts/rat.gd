@@ -17,11 +17,15 @@ signal died
 @export var max_health: int = 2
 @export var hurt_time: float = 0.16
 @export var attack_show_time: float = 0.28
-@export var roots_player: bool = false
-@export var root_time: float = 0.72
 
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var attack_sparkles: CPUParticles2D = $AttackSparkles
+
+var is_boss: bool = false
+var tint: Color = Color.WHITE
+var body_scale: float = 0.72
+var knockback_resist: float = 0.0
+var score_value: int = 12
 
 var player: Node2D = null
 var last_direction: Vector2 = Vector2.DOWN
@@ -46,7 +50,16 @@ var dash_hit_done: bool = false
 func _ready() -> void:
     add_to_group("rats")
     add_to_group("enemies")
+    if is_boss:
+        add_to_group("boss")
     dash_timer = randf_range(dash_cooldown_min, dash_cooldown_max)
+    health = max_health
+    anim.scale = Vector2(body_scale, body_scale)
+    anim.self_modulate = tint
+
+func configure(cfg: Dictionary) -> void:
+    for key in cfg:
+        set(key, cfg[key])
 
 func stun(duration: float) -> void:
     if dead:
@@ -60,8 +73,8 @@ func stun(duration: float) -> void:
 func knockback(v: Vector2) -> void:
     if dead:
         return
-    knockback_vel = v
-    knockback_timer = 0.12
+    knockback_vel = v * (1.0 - knockback_resist)
+    knockback_timer = 0.12 * (1.0 - knockback_resist)
 
 func _physics_process(delta: float) -> void:
     if dead:
@@ -226,11 +239,6 @@ func _bite(amount: int) -> void:
     if player == null or not player.has_method("take_damage"):
         return
     var killed: bool = player.take_damage(amount)
-    if not killed and roots_player:
-        if player.has_method("pin_down"):
-            player.pin_down(root_time)
-        elif player.has_method("root"):
-            player.root(root_time)
     if killed:
         _start_dash((player.global_position - global_position).normalized())
 

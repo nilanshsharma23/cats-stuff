@@ -15,6 +15,12 @@ signal died
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var aoe: CPUParticles2D = $Aoe
 
+var is_boss: bool = false
+var tint: Color = Color.WHITE
+var body_scale: float = 0.72
+var knockback_resist: float = 0.0
+var score_value: int = 18
+
 var player: Node2D = null
 var last_direction: Vector2 = Vector2.DOWN
 var health: int = max_health
@@ -30,6 +36,15 @@ var knockback_timer: float = 0.0
 func _ready() -> void:
     add_to_group("frogs")
     add_to_group("enemies")
+    if is_boss:
+        add_to_group("boss")
+    health = max_health
+    anim.scale = Vector2(body_scale, body_scale)
+    anim.self_modulate = tint
+
+func configure(cfg: Dictionary) -> void:
+    for key in cfg:
+        set(key, cfg[key])
 
 func stun(duration: float) -> void:
     if dead:
@@ -41,8 +56,8 @@ func stun(duration: float) -> void:
 func knockback(v: Vector2) -> void:
     if dead:
         return
-    knockback_vel = v
-    knockback_timer = 0.12
+    knockback_vel = v * (1.0 - knockback_resist)
+    knockback_timer = 0.12 * (1.0 - knockback_resist)
 
 func _physics_process(delta: float) -> void:
     if dead:

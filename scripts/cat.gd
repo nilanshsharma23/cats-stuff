@@ -3,29 +3,30 @@ extends CharacterBody2D
 signal died
 signal style_event(kind: String, amount: int)
 
-@export var speed: int = 200
-@export var max_health: int = 9
-@export var dash_speed: float = 460.0
-@export var dash_duration: float = 0.18
-@export var dash_cooldown: float = 0.32
+@export var speed: int = 118
+@export var max_health: int = 10
+@export var dash_speed: float = 300.0
+@export var dash_duration: float = 0.16
+@export var dash_cooldown: float = 0.30
 
 @export var paw_damage: int = 4
-@export var paw_range: float = 36.0
-@export var paw_arc: float = -0.1
-@export var paw_cooldown: float = 0.2
-@export var paw_knockback: float = 170.0
+@export var paw_range: float = 42.0
+@export var paw_arc: float = -0.25
+@export var paw_cooldown: float = 0.18
+@export var paw_knockback: float = 190.0
 
-@export var glare_range: float = 86.0
-@export var glare_arc: float = 0.45
-@export var glare_stun: float = 0.2
-@export var glare_cooldown: float = 1.2
+@export var glare_range: float = 92.0
+@export var glare_arc: float = 0.35
+@export var glare_stun: float = 0.35
+@export var glare_cooldown: float = 1.1
 @export var glare_show: float = 0.4
+
+@export var invuln_time: float = 0.55
 
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var health_bar: TextureProgressBar = $UI/Control/HealthBar
 @onready var paw_particles: CPUParticles2D = $PawParticles
 @onready var glare_eyes: Node2D = $GlareEyes
-@onready var pin_sparkles: CPUParticles2D = $PinSparkles
 
 var health: int = max_health
 var last_direction: Vector2 = Vector2.DOWN
@@ -36,25 +37,16 @@ var dash_cd_left: float = 0.0
 var dash_direction: Vector2 = Vector2.DOWN
 var paw_cd: float = 0.0
 var glare_cd: float = 0.0
-var rooted_timer: float = 0.0
-var pinned_timer: float = 0.0
+var invuln_timer: float = 0.0
 var glare_level: int = 1
 
 func _ready() -> void:
 	add_to_group("player")
 	_load_profile()
+	health = max_health
 	health_bar.max_value = max_health
 	health_bar.value = health
 	glare_eyes.visible = false
-
-func root(duration: float) -> void:
-	rooted_timer = max(rooted_timer, duration)
-
-func pin_down(duration: float) -> void:
-	pinned_timer = max(pinned_timer, duration)
-	rooted_timer = max(rooted_timer, duration)
-	pin_sparkles.restart()
-	pin_sparkles.emitting = true
 
 func _physics_process(delta: float) -> void:
 	if dead:
@@ -65,15 +57,7 @@ func _physics_process(delta: float) -> void:
 	dash_cd_left = max(dash_cd_left - delta, 0.0)
 	paw_cd = max(paw_cd - delta, 0.0)
 	glare_cd = max(glare_cd - delta, 0.0)
-	rooted_timer = max(rooted_timer - delta, 0.0)
-	pinned_timer = max(pinned_timer - delta, 0.0)
-
-	if pinned_timer > 0.0:
-		velocity = Vector2.ZERO
-		move_and_slide()
-		_play("idle_" + _facing())
-		modulate = Color(1, 0.75, 0.35)
-		return
+	invuln_timer = max(invuln_timer - delta, 0.0)
 
 	if Input.is_action_just_pressed("paw") and paw_cd <= 0.0:
 		_paw()
@@ -100,18 +84,12 @@ func _physics_process(delta: float) -> void:
 		is_dashing = true
 		dash_time_left = dash_duration
 		dash_cd_left = dash_cooldown
-		rooted_timer = 0.0
+		invuln_timer = max(invuln_timer, dash_duration + 0.05)
 		style_event.emit("dash", 2)
 		_set_flash(true)
 		return
 
-	if rooted_timer > 0.0:
-		velocity = Vector2.ZERO
-		move_and_slide()
-		_play("idle_" + _facing())
-		modulate = Color(1, 0.85, 0.5)
-		return
-	modulate = Color.WHITE
+	modulate = Color.WHITE if invuln_timer <= 0.0 else Color(1, 1, 1, 0.6)
 
 	velocity = input_direction * speed
 	move_and_slide()
@@ -178,13 +156,15 @@ func _set_flash(on: bool) -> void:
 		anim.material.set_shader_parameter("active", on)
 
 func take_damage(amount: int) -> bool:
-	if health <= 0 or is_dashing:
+	if health <= 0 or is_dashing or invuln_timer > 0.0:
 		return false
 	health -= amount
+	invuln_timer = invuln_time
 	style_event.emit("damage_taken", -10)
-	modulate = Color(1, 0.6, 0.6)
 	health_bar.value = health
-	create_tween().tween_property(self, "modulate", Color.WHITE, 0.2)
+	if anim.material != null:
+		anim.self_modulate = Color(1, 0.55, 0.55)
+		create_tween().tween_property(anim, "self_modulate", Color.WHITE, 0.35)
 	if health <= 0:
 		health = 0
 		die()
@@ -204,5 +184,5 @@ func _load_profile() -> void:
 	if err == OK:
 		glare_level = int(config.get_value("shop", "glare_level", 1))
 	glare_level = clampi(glare_level, 1, 3)
-	var stuns := [0.2, 0.5, 0.75]
+	var stuns := [0.35, 0.6, 0.85]
 	glare_stun = stuns[glare_level - 1]

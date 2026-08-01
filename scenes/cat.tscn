@@ -16,15 +16,15 @@ size = Vector2(10, 7)
 
 [node name="Cat" type="CharacterBody2D" unique_id=1933183832]
 script = ExtResource("1_myi5k")
-speed = 108
-dash_speed = 260.0
+speed = 122
+dash_speed = 300.0
 
 [node name="Anim" type="AnimatedSprite2D" parent="." unique_id=1890049918]
 material = SubResource("ShaderMaterial_cat")
+scale = Vector2(0.78, 0.78)
 sprite_frames = ExtResource("2_frames")
 animation = &"idle_front"
 autoplay = "idle_front"
-scale = Vector2(0.78, 0.78)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1022555941]
 position = Vector2(0, 5)
@@ -43,21 +43,6 @@ initial_velocity_max = 320.0
 scale_amount_min = 1.4
 scale_amount_max = 2.6
 color = Color(1, 0.98, 0.85, 0.95)
-
-[node name="PinSparkles" type="CPUParticles2D" parent="."]
-emitting = false
-amount = 34
-lifetime = 0.42
-one_shot = true
-explosiveness = 1.0
-direction = Vector2(0, -1)
-spread = 180.0
-gravity = Vector2(0, 0)
-initial_velocity_min = 22.0
-initial_velocity_max = 52.0
-scale_amount_min = 0.7
-scale_amount_max = 1.5
-color = Color(1, 0.72, 0.2, 0.92)
 
 [node name="GlareEyes" type="Node2D" parent="." unique_id=1842983455]
 visible = false
