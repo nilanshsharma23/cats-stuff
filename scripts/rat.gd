@@ -46,6 +46,8 @@ var stun_timer: float = 0.0
 var knockback_vel: Vector2 = Vector2.ZERO
 var knockback_timer: float = 0.0
 var dash_hit_done: bool = false
+var parry_window: float = 0.0
+var frozen: bool = false
 
 func _ready() -> void:
     add_to_group("rats")
@@ -70,6 +72,23 @@ func stun(duration: float) -> void:
     attack_timer = 0.0
     queue_redraw()
 
+# The window during which a well-timed player dash can freeze this enemy,
+# open only while an attack tell is on screen.
+func is_parryable() -> bool:
+    return parry_window > 0.0 and not dead
+
+func freeze(duration: float) -> void:
+    if dead:
+        return
+    frozen = true
+    stun_timer = max(stun_timer, duration)
+    parry_window = 0.0
+    is_dashing = false
+    is_winding = false
+    attack_timer = 0.0
+    velocity = Vector2.ZERO
+    queue_redraw()
+
 func knockback(v: Vector2) -> void:
     if dead:
         return
@@ -87,6 +106,7 @@ func _physics_process(delta: float) -> void:
     dash_timer = max(dash_timer - delta, 0.0)
     hurt_timer = max(hurt_timer - delta, 0.0)
     attack_timer = max(attack_timer - delta, 0.0)
+    parry_window = max(parry_window - delta, 0.0)
     queue_redraw()
 
     if knockback_timer > 0.0:
@@ -99,13 +119,15 @@ func _physics_process(delta: float) -> void:
     if stun_timer > 0.0:
         stun_timer -= delta
         velocity = Vector2.ZERO
-        modulate = Color(0.55, 0.75, 1.0)
+        modulate = Color(0.35, 0.85, 1.0) if frozen else Color(0.55, 0.75, 1.0)
         _play("idle_" + _facing())
         move_and_slide()
         if stun_timer <= 0.0:
             modulate = Color.WHITE
+            frozen = false
         return
     modulate = Color.WHITE
+    frozen = false
 
     if hurt_timer > 0.0:
         velocity = Vector2.ZERO
@@ -206,12 +228,14 @@ func _try_nibble(direction: Vector2) -> void:
         return
     nibble_timer = nibble_interval
     attack_timer = attack_show_time
+    parry_window = 0.5
     _show_bite(direction)
     _bite(nibble_damage)
 
 func _begin_windup(direction: Vector2) -> void:
     is_winding = true
     wind_timer = dash_windup
+    parry_window = 0.5
     wind_dir = direction if direction != Vector2.ZERO else last_direction
 
 func _start_dash(direction: Vector2) -> void:
@@ -299,3 +323,13 @@ func _draw() -> void:
     if attack_timer > 0.0:
         var a: float = clamp(attack_timer / attack_show_time, 0.0, 1.0)
         draw_arc(Vector2.ZERO, nibble_range, 0.0, TAU, 24, Color(1.0, 0.85, 0.35, 0.15 + 0.5 * a), 1.3, true)
+    if frozen and stun_timer > 0.0:
+        _draw_frost()
+
+func _draw_frost() -> void:
+    var col := Color(0.6, 0.92, 1.0, 0.9)
+    draw_arc(Vector2.ZERO, 9.0, 0.0, TAU, 6, col, 1.3)
+    for i in 6:
+        var ang: float = TAU * float(i) / 6.0
+        var dir := Vector2(cos(ang), sin(ang))
+        draw_line(dir * 4.0, dir * 9.0, col, 1.0)

@@ -86,12 +86,42 @@ func _save_profile() -> void:
 func _scale_menu() -> void:
 	var box: VBoxContainer = $Center/Box
 	box.add_theme_constant_override("separation", 2)
-	$Center/Box/Title.add_theme_font_size_override("font_size", 22)
-	$Center/Box/Sub.add_theme_font_size_override("font_size", 9)
+	var title: Label = $Center/Box/Title
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(0.86, 0.22, 0.28, 1))
+	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	title.add_theme_constant_override("outline_size", 4)
+	var sub: Label = $Center/Box/Sub
+	sub.add_theme_font_size_override("font_size", 7)
+	sub.add_theme_color_override("font_color", Color(0.62, 0.62, 0.68, 1))
+	if box.has_node("Spacer"):
+		box.get_node("Spacer").custom_minimum_size = Vector2(0, 1)
 	for name in ["Play", "Tutorial", "Shop", "Quit"]:
 		var button: Button = box.get_node(name)
-		button.custom_minimum_size = Vector2(150, 15)
-		button.add_theme_font_size_override("font_size", 10)
+		button.custom_minimum_size = Vector2(150, 13)
+		button.add_theme_font_size_override("font_size", 9)
+		_style_button(button)
+
+func _style_button(button: Button) -> void:
+	button.add_theme_stylebox_override("normal", _button_box(Color(0.13, 0.12, 0.16, 1), Color(0.32, 0.3, 0.36, 1)))
+	button.add_theme_stylebox_override("hover", _button_box(Color(0.2, 0.15, 0.19, 1), Color(0.86, 0.28, 0.34, 1)))
+	button.add_theme_stylebox_override("pressed", _button_box(Color(0.1, 0.09, 0.12, 1), Color(0.86, 0.28, 0.34, 1)))
+	button.add_theme_stylebox_override("focus", _button_box(Color(0.2, 0.15, 0.19, 1), Color(0.86, 0.28, 0.34, 1)))
+	button.add_theme_color_override("font_color", Color(0.92, 0.9, 0.94, 1))
+	button.add_theme_color_override("font_hover_color", Color(1, 0.95, 0.96, 1))
+	button.add_theme_color_override("font_focus_color", Color(1, 0.95, 0.96, 1))
+
+func _button_box(bg: Color, border: Color) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = bg
+	s.set_border_width_all(1)
+	s.border_color = border
+	s.set_corner_radius_all(2)
+	s.content_margin_top = 2.0
+	s.content_margin_bottom = 2.0
+	s.content_margin_left = 4.0
+	s.content_margin_right = 4.0
+	return s
 
 func _ensure_stats() -> void:
 	var box: VBoxContainer = $Center/Box
@@ -105,7 +135,7 @@ func _ensure_stats() -> void:
 		stats_label.custom_minimum_size = Vector2(180, 20)
 		box.add_child(stats_label)
 		box.move_child(stats_label, 3)
-	stats_label.add_theme_font_size_override("font_size", 8)
+	stats_label.add_theme_font_size_override("font_size", 7)
 	stats_label.add_theme_color_override("font_color", Color(0.9, 0.82, 0.58, 1))
 	_refresh_stats()
 
@@ -161,8 +191,9 @@ func _ensure_shop_panel() -> void:
 func _make_button(text: String) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.custom_minimum_size = Vector2(150, 14)
+	button.custom_minimum_size = Vector2(150, 13)
 	button.add_theme_font_size_override("font_size", 9)
+	_style_button(button)
 	return button
 
 func _refresh_shop(message: String = "") -> void:

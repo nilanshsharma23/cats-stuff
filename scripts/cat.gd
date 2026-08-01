@@ -86,6 +86,7 @@ func _physics_process(delta: float) -> void:
 		dash_cd_left = dash_cooldown
 		invuln_timer = max(invuln_timer, dash_duration + 0.05)
 		style_event.emit("dash", 2)
+		_try_parry()
 		_set_flash(true)
 		return
 
@@ -98,6 +99,18 @@ func _physics_process(delta: float) -> void:
 		_play("walk_" + _facing())
 	else:
 		_play("idle_" + _facing())
+
+# Dashing the instant an enemy telegraphs its attack (its tell is on screen)
+# freezes that enemy solid — a reward for reading the wind-up.
+func _try_parry() -> void:
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(e):
+			continue
+		if not (e.has_method("is_parryable") and e.has_method("freeze")):
+			continue
+		if e.is_parryable() and global_position.distance_to(e.global_position) <= 74.0:
+			e.freeze(2.0)
+			style_event.emit("parry", 24)
 
 func _aim() -> Vector2:
 	var a := get_global_mouse_position() - global_position

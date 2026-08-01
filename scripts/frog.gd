@@ -32,6 +32,8 @@ var hurt_timer: float = 0.0
 var stun_timer: float = 0.0
 var knockback_vel: Vector2 = Vector2.ZERO
 var knockback_timer: float = 0.0
+var parry_window: float = 0.0
+var frozen: bool = false
 
 func _ready() -> void:
     add_to_group("frogs")
@@ -53,6 +55,21 @@ func stun(duration: float) -> void:
     is_croaking = false
     queue_redraw()
 
+# Open only while the croak wind-up tell is on screen; a dash in that
+# window freezes the frog.
+func is_parryable() -> bool:
+    return parry_window > 0.0 and not dead
+
+func freeze(duration: float) -> void:
+    if dead:
+        return
+    frozen = true
+    stun_timer = max(stun_timer, duration)
+    parry_window = 0.0
+    is_croaking = false
+    velocity = Vector2.ZERO
+    queue_redraw()
+
 func knockback(v: Vector2) -> void:
     if dead:
         return
@@ -68,6 +85,7 @@ func _physics_process(delta: float) -> void:
     _find_player()
     croak_cd = max(croak_cd - delta, 0.0)
     hurt_timer = max(hurt_timer - delta, 0.0)
+    parry_window = max(parry_window - delta, 0.0)
     queue_redraw()
 
     if knockback_timer > 0.0:
@@ -80,13 +98,15 @@ func _physics_process(delta: float) -> void:
     if stun_timer > 0.0:
         stun_timer -= delta
         velocity = Vector2.ZERO
-        modulate = Color(0.55, 0.75, 1.0)
+        modulate = Color(0.35, 0.85, 1.0) if frozen else Color(0.55, 0.75, 1.0)
         _play("idle_" + _facing())
         move_and_slide()
         if stun_timer <= 0.0:
             modulate = Color.WHITE
+            frozen = false
         return
     modulate = Color.WHITE
+    frozen = false
 
     if hurt_timer > 0.0:
         velocity = Vector2.ZERO
@@ -129,6 +149,7 @@ func _physics_process(delta: float) -> void:
             is_croaking = true
             croak_timer = croak_windup
             croak_cd = croak_cooldown
+            parry_window = 0.5
             _play("croak_" + _facing())
         else:
             _play("idle_" + _facing())
@@ -208,6 +229,9 @@ func _play(name: String) -> void:
         anim.play(name)
 
 func _draw() -> void:
+    if frozen and stun_timer > 0.0:
+        _draw_frost()
+        return
     if not is_croaking:
         return
     var t: float = 1.0 - clamp(croak_timer / croak_windup, 0.0, 1.0)
@@ -215,3 +239,11 @@ func _draw() -> void:
     var a: float = 0.22 + 0.4 * t
     draw_arc(Vector2.ZERO, r, 0.0, TAU, 40, Color(0.3, 1.0, 0.45, a), 1.5, true)
     draw_arc(Vector2.ZERO, r * 0.6, 0.0, TAU, 28, Color(0.55, 1.0, 0.6, a * 0.55), 1.0, true)
+
+func _draw_frost() -> void:
+    var col := Color(0.6, 0.92, 1.0, 0.9)
+    draw_arc(Vector2.ZERO, 9.0, 0.0, TAU, 6, col, 1.3)
+    for i in 6:
+        var ang: float = TAU * float(i) / 6.0
+        var dir := Vector2(cos(ang), sin(ang))
+        draw_line(dir * 4.0, dir * 9.0, col, 1.0)

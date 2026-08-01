@@ -290,7 +290,7 @@ func _on_style_event(kind: String, amount: int) -> void:
 		if kind == "glare":
 			_set_reward("Glare saved you. Style taxed.")
 		return
-	if kind == "paw_hit" or kind == "paw_kill" or kind == "dash" or kind == "enemy_down":
+	if kind == "paw_hit" or kind == "paw_kill" or kind == "dash" or kind == "enemy_down" or kind == "parry":
 		no_glare_chain += 1
 	var multiplier: float = 1.0 + mini(no_glare_chain, 24) * 0.06
 	style_meter += amount * multiplier
@@ -300,6 +300,8 @@ func _on_style_event(kind: String, amount: int) -> void:
 		score += scored
 		if kind == "paw_kill":
 			_set_reward("Clean kill +%d  Chain x%d" % [scored, no_glare_chain])
+		elif kind == "parry":
+			_set_reward("PARRY! Frozen +%d  Chain x%d" % [scored, no_glare_chain])
 
 func _style_rank() -> String:
 	if style_meter >= 360.0:
@@ -565,7 +567,24 @@ func _make_button(text: String) -> Button:
 	button.text = text
 	button.custom_minimum_size = Vector2(146, 14)
 	button.add_theme_font_size_override("font_size", 9)
+	button.add_theme_stylebox_override("normal", _button_box(Color(0.13, 0.12, 0.16, 1), Color(0.32, 0.3, 0.36, 1)))
+	button.add_theme_stylebox_override("hover", _button_box(Color(0.2, 0.15, 0.19, 1), Color(0.86, 0.28, 0.34, 1)))
+	button.add_theme_stylebox_override("pressed", _button_box(Color(0.1, 0.09, 0.12, 1), Color(0.86, 0.28, 0.34, 1)))
+	button.add_theme_stylebox_override("focus", _button_box(Color(0.2, 0.15, 0.19, 1), Color(0.86, 0.28, 0.34, 1)))
+	button.add_theme_color_override("font_color", Color(0.92, 0.9, 0.94, 1))
 	return button
+
+func _button_box(bg: Color, border: Color) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = bg
+	s.set_border_width_all(1)
+	s.border_color = border
+	s.set_corner_radius_all(2)
+	s.content_margin_top = 2.0
+	s.content_margin_bottom = 2.0
+	s.content_margin_left = 4.0
+	s.content_margin_right = 4.0
+	return s
 
 func _open_shop() -> void:
 	_refresh_shop()
@@ -643,6 +662,7 @@ func _show_tutorial_step() -> void:
 		"Time stop. The swarm waits while you learn. Move with WASD or arrows and aim with the mouse.",
 		"Left click swipes the paw. Hits and kills build your STYLE rank, score, and coins fast.",
 		"Space dashes through danger and dodges hits. Chain kills without panicking to climb the ranks.",
+		"Dash the instant a foe flashes its attack tell (red or green wind-up) to FREEZE it solid.",
 		"Right click glares to stun a pack, but glare drops your style and trims the payout. Now go hunt.",
 	]
 	tutorial_step = clampi(tutorial_step, 0, steps.size() - 1)
@@ -653,7 +673,7 @@ func _show_tutorial_step() -> void:
 
 func _advance_tutorial() -> void:
 	tutorial_step += 1
-	if tutorial_step >= 4:
+	if tutorial_step >= 5:
 		tutorial_panel.visible = false
 		get_tree().paused = false
 		return
