@@ -231,7 +231,7 @@ func _combo_color() -> Color:
 		return Color(1.0, 0.85, 0.35)
 	return Color(0.96, 0.97, 1.0)
 
-# Floating combat text that rises off a kill — cheap, immediate dopamine.
+# Floating combat text that rises off a kill - cheap, immediate dopamine.
 func _spawn_popup(pos: Vector2, text: String) -> void:
 	var l := Label.new()
 	l.position = pos + Vector2(-10, -14)
@@ -471,7 +471,7 @@ func _start_break() -> void:
 		return
 	var next_i := wave_index + 1
 	if _is_boss_wave(next_i):
-		break_info.text = "Catch your breath — the BOSS is next. Spend your coins!"
+		break_info.text = "Catch your breath - the BOSS is next. Spend your coins!"
 	else:
 		break_info.text = "Nice clear! Chill a sec. Next wave: %d foes incoming." % _wave_enemy_count(next_i)
 	break_status.text = ""
@@ -562,7 +562,7 @@ func _build_break_panel() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 13)
 	title.add_theme_color_override("font_color", Color(0.5, 1.0, 0.85, 1))
-	title.text = "BREAK — CHILL OUT"
+	title.text = "BREAK - CHILL OUT"
 	box.add_child(title)
 	break_info = Label.new()
 	break_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -637,7 +637,7 @@ func _on_style_event(kind: String, amount: int) -> void:
 	if kind == "multi":
 		_multikill(amount)
 		return
-	# Plain dashing is free movement — it neither builds nor breaks the combo.
+	# Plain dashing is free movement - it neither builds nor breaks the combo.
 	# The combo is a damage-and-parry streak, not a dash-spam counter.
 	if kind == "dash":
 		return
@@ -646,7 +646,7 @@ func _on_style_event(kind: String, amount: int) -> void:
 			# LEER is now an offensive setup, not a punish: it costs a sliver of
 			# style but never wipes the combo.
 			glare_uses += 1
-			_set_reward("LEER! Marked prey — hit them to EXECUTE.")
+			_set_reward("LEER! Marked prey - hit them to EXECUTE.")
 			_flash(Color(1.0, 0.2, 0.25), 0.22)
 		if kind == "damage_taken":
 			_flash(Color(1.0, 0.2, 0.2), 0.5)
@@ -1059,9 +1059,9 @@ func _show_tutorial_step() -> void:
 	var steps := [
 		"Time stop. Move with WASD or arrows, aim with the mouse. LEFT CLICK = quick paw swipes.",
 		"RIGHT CLICK = heavy BITE. It roots you for a beat (you're open!), but one-shots small foes and makes them bleed.",
-		"HOLD RIGHT CLICK for a TAIL sweep that flings enemies away — clutch when you get swarmed.",
+		"HOLD RIGHT CLICK for a TAIL sweep that flings enemies away - clutch when you get swarmed.",
 		"Press E to LEER: stuns and MARKS a pack. Hit a marked foe to EXECUTE it for bonus style.",
-		"DASH (Space) INTO an enemy's attack tell to FREEZE it — a perfect parry. Spend coins between waves. Go hunt.",
+		"DASH (Space) INTO an enemy's attack tell to FREEZE it - a perfect parry. Spend coins between waves. Go hunt.",
 	]
 	tutorial_step = clampi(tutorial_step, 0, steps.size() - 1)
 	tutorial_text.text = steps[tutorial_step]

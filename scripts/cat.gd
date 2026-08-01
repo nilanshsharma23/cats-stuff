@@ -9,14 +9,14 @@ signal style_event(kind: String, amount: int)
 @export var dash_duration: float = 0.16
 @export var dash_cooldown: float = 0.30
 
-# Light attack — paw swipe (left mouse). Low damage: basics take 2-3.
+# Light attack - paw swipe (left mouse). Low damage: basics take 2-3.
 @export var paw_damage: int = 1
 @export var paw_range: float = 42.0
 @export var paw_arc: float = -0.25
 @export var paw_cooldown: float = 0.18
 @export var paw_knockback: float = 150.0
 
-# Heavy attack — bite (right mouse tap). Roots the cat for a beat, leaving it
+# Heavy attack - bite (right mouse tap). Roots the cat for a beat, leaving it
 # vulnerable, but one-shots basics and makes them bleed.
 @export var bite_damage: int = 5
 @export var bite_range: float = 40.0
@@ -26,7 +26,7 @@ signal style_event(kind: String, amount: int)
 @export var bite_bleed_dur: float = 5.0
 @export var bite_bleed_dps: float = 2.0
 
-# Tail sweep — hold right mouse. Big knockback, little damage.
+# Tail sweep - hold right mouse. Big knockback, little damage.
 @export var tail_damage: int = 1
 @export var tail_range: float = 50.0
 @export var tail_arc: float = -0.4
@@ -34,7 +34,7 @@ signal style_event(kind: String, amount: int)
 @export var tail_cooldown: float = 0.7
 @export var tail_hold_threshold: float = 0.32
 
-# Leer (E) — stun and mark a pack for execute setups.
+# Leer (E) - stun and mark a pack for execute setups.
 @export var leer_range: float = 92.0
 @export var leer_arc: float = 0.35
 @export var leer_stun: float = 0.35
@@ -213,7 +213,7 @@ func _paw() -> void:
 		style_event.emit("multi", kills)
 
 # Heavy bite: roots the cat (bite_lock) and leaves it open, but hits hard and
-# inflicts bleeding — a big commitment that clears tough foes.
+# inflicts bleeding - a big commitment that clears tough foes.
 func _bite() -> void:
 	bite_lock_timer = bite_lock
 	var aim := _aim()
@@ -265,7 +265,7 @@ func _show_slash(aim: Vector2, scale_mul: float) -> void:
 	slash.play("slash")
 
 # LEER (E): stun and MARK a pack. Marked foes take double light damage and
-# detonate into an EXECUTE when killed — an offensive setup, not a panic button.
+# detonate into an EXECUTE when killed - an offensive setup, not a panic button.
 func _leer() -> void:
 	leer_cd = leer_cooldown
 	var aim := _aim()
