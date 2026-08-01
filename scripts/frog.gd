@@ -16,6 +16,9 @@ signal died
 @export var bloodlust_speed_mul: float = 1.32
 @export var max_health: int = 3
 @export var hurt_time: float = 0.22
+# chaser - waddles into croak range and holds. kiter (spitters) - keeps its
+# distance, hopping away when you close, and zones you from range.
+@export var behavior: String = "chaser"
 
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var aoe: CPUParticles2D = $Aoe
@@ -45,12 +48,14 @@ var bleed_accum: float = 0.0
 var bleed_dps: float = 0.0
 var attack_lock: float = 0.0
 var bite_cd: float = 0.0
+var strafe_sign: float = 1.0
 
 func _ready() -> void:
 	add_to_group("frogs")
 	add_to_group("enemies")
 	if is_boss:
 		add_to_group("boss")
+	strafe_sign = 1.0 if randf() < 0.5 else -1.0
 	health = max_health
 	anim.scale = Vector2(body_scale, body_scale)
 	anim.self_modulate = tint
@@ -184,17 +189,28 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
+	var aim := to_player.normalized() if to_player != Vector2.ZERO else last_direction
+	_face(aim)
+
+	# Kiters hold the edge of their range and peel off when you crowd them,
+	# still spitting as they retreat - so you can't just walk them down.
+	if behavior == "kiter" and distance < croak_range * 0.82:
+		var strafe := Vector2(-aim.y, aim.x) * strafe_sign
+		var away := (-aim * 0.85 + strafe * 0.4).normalized()
+		velocity = _chase_direction_from(away) * move_speed
+		if croak_cd <= 0.0 and attack_lock <= 0.0:
+			_begin_croak()
+		else:
+			_play("walk_" + _facing())
+		move_and_slide()
+		return
+
 	var direction := _chase_direction(to_player)
-	_face(direction)
 
 	if distance <= croak_range:
 		velocity = Vector2.ZERO
 		if croak_cd <= 0.0 and attack_lock <= 0.0:
-			is_croaking = true
-			croak_timer = croak_windup
-			croak_cd = croak_cooldown
-			parry_window = 0.5
-			_play("croak_" + _facing())
+			_begin_croak()
 		else:
 			_play("idle_" + _facing())
 	else:
@@ -202,6 +218,13 @@ func _physics_process(delta: float) -> void:
 		_play("walk_" + _facing())
 
 	move_and_slide()
+
+func _begin_croak() -> void:
+	is_croaking = true
+	croak_timer = croak_windup
+	croak_cd = croak_cooldown
+	parry_window = 0.5
+	_play("croak_" + _facing())
 
 func _bite_player(direction: Vector2) -> void:
 	bite_cd = bite_cooldown
@@ -270,6 +293,9 @@ func _face(direction: Vector2) -> void:
 
 func _chase_direction(to_player: Vector2) -> Vector2:
 	var base := to_player.normalized() if to_player != Vector2.ZERO else last_direction
+	return _chase_direction_from(base)
+
+func _chase_direction_from(base: Vector2) -> Vector2:
 	var push := Vector2.ZERO
 	for other in get_tree().get_nodes_in_group("enemies"):
 		if other == self or not is_instance_valid(other):

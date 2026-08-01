@@ -24,13 +24,15 @@ var ROSTER := {
 	"scurrier": {
 		"scene": "rat",
 		"cfg": {"max_health": 3, "move_speed": 142.0, "nibble_damage": 1,
+			"behavior": "skirmisher", "preferred_range": 44.0,
 			"dash_chance": 0.72, "dash_cooldown_min": 0.95, "dash_cooldown_max": 1.7,
 			"tint": Color(0.72, 1.0, 0.55), "body_scale": 0.6, "score_value": 14}
 	},
 	"brute": {
 		"scene": "rat",
-		"cfg": {"max_health": 8, "move_speed": 68.0, "nibble_damage": 1,
-			"nibble_range": 23.0, "dash_chance": 0.36, "knockback_resist": 0.66,
+		"cfg": {"max_health": 8, "move_speed": 68.0, "nibble_damage": 2, "dash_damage": 2,
+			"behavior": "bruiser", "nibble_range": 23.0, "dash_chance": 0.36,
+			"knockback_resist": 0.66,
 			"tint": Color(1.0, 0.5, 0.42), "body_scale": 1.08, "score_value": 42}
 	},
 	"frog": {
@@ -41,7 +43,7 @@ var ROSTER := {
 	"spitter": {
 		"scene": "frog",
 		"cfg": {"max_health": 5, "move_speed": 90.0, "croak_cooldown": 1.55, "bloodlust_speed_mul": 1.28,
-			"croak_range": 54.0, "aoe_radius": 32.0, "croak_windup": 0.5,
+			"behavior": "kiter", "croak_range": 54.0, "aoe_radius": 32.0, "croak_windup": 0.5,
 			"tint": Color(0.5, 0.82, 1.0), "body_scale": 0.7, "score_value": 30}
 	},
 	"boss": {
@@ -88,6 +90,7 @@ var glare_uses: int = 0
 var profile_saved: bool = false
 var tutorial_enabled: bool = false
 var tutorial_step: int = 0
+var endless: bool = false
 var last_earned: int = 0
 var result_path: String = ""
 var reward_timer: float = 0.0
@@ -114,7 +117,7 @@ var upgrade_button: Button
 var boss_panel: Control
 var boss_name_label: Label
 var boss_fill: ColorRect
-var boss_bar_width: float = 160.0
+var boss_bar_width: float = 150.0
 var ability_panel: HBoxContainer
 var ability_slots: Dictionary = {}
 var hud_panel: ColorRect
@@ -167,6 +170,11 @@ func _ready() -> void:
 	_load_profile()
 	tutorial_enabled = bool(get_tree().get_meta("tutorial_enabled", false))
 	get_tree().set_meta("tutorial_enabled", false)
+	# Endless: kept set across scene reloads so RETRY / PLAY AGAIN stay endless;
+	# the menu's PLAY / TUTORIAL explicitly clear it.
+	endless = bool(get_tree().get_meta("endless_enabled", false))
+	if endless:
+		tutorial_enabled = false
 	banner.modulate.a = 0.0
 	_setup_camera()
 	_build_result_panel()
@@ -220,10 +228,16 @@ func _set_player_health_visible(shown: bool) -> void:
 
 func _sync_fight_ui() -> void:
 	var shown := _is_fight_active()
+	var boss_fight: bool = shown and boss_active
 	_set_player_health_visible(shown)
-	for n in [hud_panel, score_panel, player_panel, wave_label, score_label, combo_label, ability_panel]:
+	# Bottom HUD (player card, rank, abilities) is always up during a fight.
+	for n in [player_panel, combo_label, ability_panel]:
 		if n != null:
 			n.visible = shown
+	# The top wave/score plates step aside for the boss bar so nothing stacks.
+	for n in [hud_panel, score_panel, wave_label, score_label]:
+		if n != null:
+			n.visible = shown and not boss_fight
 	if enemies_label != null:
 		enemies_label.visible = false
 	if reward_label != null:
@@ -336,6 +350,10 @@ func _check_combo_milestone() -> void:
 		_shake(2.8)
 
 func _build_waves() -> void:
+	if endless:
+		waves = [_gen_endless_wave(0)]
+		SoundManager.play_music(RAT_BOSS_1, 0, "Music")
+		return
 	if level_id == 1:
 		if tutorial_enabled:
 			waves = [
@@ -347,7 +365,9 @@ func _build_waves() -> void:
 			waves = [
 				[["rat", 4]],
 				[["rat", 5], ["scurrier", 3]],
-				[["rat", 4], ["scurrier", 3], ["frog", 2]],
+				[["scurrier", 4], ["frog", 2]],
+				[["rat", 4], ["brute", 1], ["spitter", 2]],
+				[["rat", 5], ["scurrier", 4], ["frog", 3]],
 			]
 		SoundManager.play_music(WAVE_MUSIC, 0, "Music")
 	elif level_id == 2:
@@ -355,6 +375,7 @@ func _build_waves() -> void:
 			[["rat", 6], ["frog", 2]],
 			[["scurrier", 6], ["frog", 3]],
 			[["rat", 5], ["brute", 2], ["spitter", 2]],
+			[["scurrier", 6], ["brute", 2], ["spitter", 3]],
 			[["boss", 1], ["scurrier", 4], ["frog", 2]],
 		]
 		SoundManager.play_music(RAT_BOSS_1, 0, "Music")
@@ -362,6 +383,7 @@ func _build_waves() -> void:
 		waves = [
 			[["spitter", 4], ["frog", 5]],
 			[["brute", 2], ["scurrier", 6], ["spitter", 4]],
+			[["frog", 5], ["spitter", 4], ["brute", 3]],
 			[["frog_boss", 1], ["frog", 3], ["spitter", 2]],
 		]
 		SoundManager.play_music(FROG_BOSS_2, 0, "Music")
@@ -369,6 +391,7 @@ func _build_waves() -> void:
 		waves = [
 			[["rat", 7], ["brute", 3], ["spitter", 4]],
 			[["scurrier", 8], ["frog", 4], ["spitter", 5]],
+			[["brute", 4], ["scurrier", 6], ["spitter", 5]],
 			[["pigeon_boss", 1], ["scurrier", 4], ["spitter", 2]],
 		]
 		SoundManager.play_music(PIGEON_BOSS_3, 0, "Music")
@@ -386,17 +409,41 @@ func _is_boss_wave(index: int) -> bool:
 				return true
 	return false
 
+# Endless survival: hordes that keep escalating, with a boss milestone every
+# fifth wave (cycling the three bosses). No scripted end - you play until the
+# swarm finally catches you.
+func _gen_endless_wave(n: int) -> Array:
+	if n > 0 and n % 5 == 0:
+		var bosses := ["boss", "frog_boss", "pigeon_boss"]
+		var pick: String = bosses[(n / 5 - 1) % bosses.size()]
+		return [[pick, 1], ["scurrier", 2 + n / 5], ["spitter", 1 + n / 10]]
+	var pool := ["rat", "scurrier", "frog"]
+	if n >= 3:
+		pool.append("spitter")
+	if n >= 4:
+		pool.append("brute")
+	var budget: int = mini(4 + n * 2, 26)
+	var types: int = mini(2 + n / 6, 3)
+	var wave: Array = []
+	for i in types:
+		var key: String = pool[rng.randi_range(0, pool.size() - 1)]
+		wave.append([key, maxi(1, budget / types)])
+	return wave
+
 func _next_wave() -> void:
 	if cleared:
 		return
 	wave_index += 1
 	if wave_index >= waves.size():
-		_level_cleared()
-		return
+		if endless:
+			waves.append(_gen_endless_wave(wave_index))
+		else:
+			_level_cleared()
+			return
 	if _is_boss_wave(wave_index):
 		boss_active = true
 		_show_banner(_boss_banner_name(waves[wave_index]))
-		_set_reward("Final boss. End it in style.")
+		_set_reward("Boss milestone. Survive it." if endless else "Final boss. End it in style.")
 	else:
 		_show_banner("WAVE %d" % (wave_index + 1))
 		_set_reward("Rank high. Cash out harder.")
@@ -405,6 +452,28 @@ func _next_wave() -> void:
 		var count := int(entry[1])
 		for i in count:
 			_spawn(key)
+
+# Difficulty that actually adapts. Enemies get tougher the deeper you are in a
+# level AND the more the player has powered up, so buying upgrades raises the
+# ceiling instead of trivialising the fight. Bosses scale gently by level only.
+func _heat() -> float:
+	var h := float(hp_buys + dash_buys + leer_buys) + float(glare_level - 1)
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat != null:
+		h += maxf(0.0, float(int(cat.get("max_health")) - 8)) * 0.5
+	return h
+
+func _scaled_cfg(cfg: Dictionary) -> Dictionary:
+	var out: Dictionary = cfg.duplicate(true)
+	if bool(out.get("is_boss", false)):
+		out["max_health"] = int(round(float(out.get("max_health", 40)) * (1.0 + 0.1 * float(level_id - 1))))
+		return out
+	var heat := _heat()
+	var hp_mul := 1.0 + 0.14 * float(maxi(wave_index, 0)) + 0.12 * heat
+	out["max_health"] = maxi(1, int(round(float(out.get("max_health", 3)) * hp_mul)))
+	if out.has("move_speed"):
+		out["move_speed"] = float(out["move_speed"]) * (1.0 + 0.04 * heat)
+	return out
 
 func _spawn(key: String) -> void:
 	if not ROSTER.has(key):
@@ -424,7 +493,7 @@ func _spawn(key: String) -> void:
 		return
 	var e := scene.instantiate()
 	if e.has_method("configure"):
-		e.configure(data["cfg"])
+		e.configure(_scaled_cfg(data["cfg"]))
 	e.position = _spawn_point()
 	add_child(e)
 	if e.has_signal("died"):
@@ -488,7 +557,7 @@ func _finish_wave_after_delay() -> void:
 	await get_tree().create_timer(2.0).timeout
 	if cleared or boss_active or _live_enemy_count() > 0:
 		return
-	if wave_index + 1 >= waves.size():
+	if endless or wave_index + 1 >= waves.size():
 		_next_wave()
 	else:
 		_start_break()
@@ -496,7 +565,6 @@ func _finish_wave_after_delay() -> void:
 func _on_boss_died(boss: Node = null) -> void:
 	if cleared:
 		return
-	cleared = true
 	boss_active = false
 	kills += 1
 	var boss_score := 600
@@ -510,6 +578,13 @@ func _on_boss_died(boss: Node = null) -> void:
 	_hype("BOSS DOWN +%d" % boss_score, Color(1.0, 0.85, 0.3))
 	_flash(Color(1, 1, 1), 0.95)
 	_shake(4.5)
+	# In endless a boss is a milestone, not the finish line - roll into the next
+	# wave instead of ending the run.
+	if endless:
+		_award_wave_clear()
+		call_deferred("_finish_wave_after_delay")
+		return
+	cleared = true
 	await get_tree().create_timer(0.7).timeout
 	_finish_run("VICTORY!" if next_level_path == "" else "LEVEL CLEAR", true)
 
@@ -686,7 +761,8 @@ func _on_cat_died() -> void:
 	_flash(Color(0.8, 0.05, 0.1), 0.85)
 	_shake(4.0)
 	await get_tree().create_timer(0.55).timeout
-	_finish_run("YOU GOT CLIPPED", false)
+	var title := ("SURVIVED  W%d" % (wave_index + 1)) if endless else "YOU GOT CLIPPED"
+	_finish_run(title, false)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey:
@@ -855,15 +931,19 @@ func _rank_coin_multiplier() -> float:
 	return 0.12
 
 func _build_hud() -> void:
-	hud_panel = _hud_plate("HudTop", Vector2(66, 3), Vector2(124, 15), Color(0.02, 0.025, 0.035, 0.82))
-	score_panel = _hud_plate("HudScore", Vector2(190, 4), Vector2(58, 21), Color(0.025, 0.025, 0.035, 0.86))
-	player_panel = _hud_plate("PlayerCard", Vector2(8, 113), Vector2(68, 23), Color(0.025, 0.03, 0.045, 0.88))
-	wave_label = _hud_label(Vector2(72, 6), Vector2(112, 9), Color(0.96, 0.92, 0.74, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
-	score_label = _hud_label(Vector2(195, 7), Vector2(48, 14), Color(0.95, 0.96, 1.0, 1.0), 6, HORIZONTAL_ALIGNMENT_CENTER)
-	combo_label = _hud_label(Vector2(13, 118), Vector2(58, 14), Color(1.0, 0.82, 0.25, 1.0), 6, HORIZONTAL_ALIGNMENT_LEFT)
+	# Top-left: wave / enemies-left plate. Top-right: score plate. They no longer
+	# collide with each other or with the boss bar (which replaces them mid-boss).
+	hud_panel = _hud_plate("HudTop", Vector2(4, 3), Vector2(110, 11), Color(0.02, 0.025, 0.035, 0.82))
+	score_panel = _hud_plate("HudScore", Vector2(176, 3), Vector2(76, 22), Color(0.025, 0.025, 0.035, 0.86))
+	# Bottom-left player card is tall enough to frame the rank text AND the cat's
+	# health bar (which lives at y129 in cat.tscn) without them stacking.
+	player_panel = _hud_plate("PlayerCard", Vector2(4, 108), Vector2(100, 33), Color(0.025, 0.03, 0.045, 0.88))
+	wave_label = _hud_label(Vector2(8, 4), Vector2(104, 9), Color(0.96, 0.92, 0.74, 1.0), 6, HORIZONTAL_ALIGNMENT_LEFT)
+	score_label = _hud_label(Vector2(180, 5), Vector2(68, 16), Color(0.95, 0.96, 1.0, 1.0), 6, HORIZONTAL_ALIGNMENT_RIGHT)
+	combo_label = _hud_label(Vector2(9, 110), Vector2(92, 16), Color(1.0, 0.82, 0.25, 1.0), 6, HORIZONTAL_ALIGNMENT_LEFT)
 	enemies_label = _hud_label(Vector2(0, 0), Vector2(1, 1), Color(1.0, 0.62, 0.55, 1.0), 7, HORIZONTAL_ALIGNMENT_RIGHT)
 	enemies_label.visible = false
-	reward_label = _hud_label(Vector2(55, 94), Vector2(146, 10), Color(0.55, 1.0, 0.86, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
+	reward_label = _hud_label(Vector2(48, 98), Vector2(160, 10), Color(0.55, 1.0, 0.86, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
 	reward_label.modulate.a = 0.0
 	_refresh_hud()
 
@@ -871,7 +951,9 @@ func _build_ability_bar() -> void:
 	ability_slots.clear()
 	ability_panel = HBoxContainer.new()
 	ability_panel.name = "AbilityBar"
-	ability_panel.position = Vector2(76, 117)
+	# Sits to the right of the player card along the bottom edge, clear of the
+	# health bar. 5 slots x 28 + 4 gaps x 2 = 148px, ending just shy of x256.
+	ability_panel.position = Vector2(106, 117)
 	ability_panel.add_theme_constant_override("separation", 2)
 	$UI.add_child(ability_panel)
 	_add_ability_slot("PAW", "m1", Color(0.48, 1.0, 0.66, 0.95))
@@ -894,7 +976,7 @@ func _hex_points(size: Vector2) -> PackedVector2Array:
 
 func _add_ability_slot(key: String, hint: String, color: Color) -> void:
 	var root := Control.new()
-	var slot_size := Vector2(34.0, 22.0)
+	var slot_size := Vector2(28.0, 22.0)
 	root.custom_minimum_size = slot_size
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var hex: PackedVector2Array = _hex_points(slot_size)
@@ -996,7 +1078,10 @@ func _refresh_hud() -> void:
 		return
 	var rank := _style_rank()
 	var left := _live_enemy_count()
-	wave_label.text = "WAVE %d/%d   LEFT %02d" % [clampi(wave_index + 1, 1, _normal_wave_count()), _normal_wave_count(), left]
+	if endless:
+		wave_label.text = "ENDLESS  W%d   LEFT %02d" % [wave_index + 1, left]
+	else:
+		wave_label.text = "WAVE %d/%d   LEFT %02d" % [clampi(wave_index + 1, 1, _normal_wave_count()), _normal_wave_count(), left]
 	score_label.text = "KILLS %d\nCOIN %d" % [kills, coins]
 	combo_label.text = "%s\n%d PTS" % [rank, score]
 	combo_label.add_theme_color_override("font_color", _rank_color(rank))
@@ -1039,12 +1124,12 @@ func _build_boss_bar() -> void:
 	name_label.text = BOSS_NAME
 	boss_panel.add_child(name_label)
 	var frame := ColorRect.new()
-	frame.position = Vector2(48, 13)
+	frame.position = Vector2(53, 13)
 	frame.size = Vector2(boss_bar_width, 6)
 	frame.color = Color(0.1, 0.02, 0.08, 0.9)
 	boss_panel.add_child(frame)
 	boss_fill = ColorRect.new()
-	boss_fill.position = Vector2(49, 14)
+	boss_fill.position = Vector2(54, 14)
 	boss_fill.size = Vector2(boss_bar_width - 2.0, 4)
 	boss_fill.color = Color(0.95, 0.2, 0.55, 1.0)
 	boss_panel.add_child(boss_fill)
@@ -1124,7 +1209,10 @@ func _finish_run(title: String, success: bool) -> void:
 	_hide_hud()
 	result_title.text = title
 	result_path = next_level_path if success and next_level_path != "" else "res://scenes/level1.tscn"
-	result_continue.text = "NEXT LEVEL" if success and next_level_path != "" else "PLAY AGAIN"
+	if success and next_level_path != "" and not endless:
+		result_continue.text = "NEXT LEVEL"
+	else:
+		result_continue.text = "RUN AGAIN" if endless else "PLAY AGAIN"
 	result_continue.visible = true
 	result_summary.text = _result_summary(success)
 	game_over.visible = true
@@ -1135,6 +1223,8 @@ func _result_summary(success: bool) -> String:
 	var rank := _style_rank()
 	var no_glare_bonus: int = 25 if glare_uses == 0 else maxi(0, 16 - glare_uses * 7)
 	var clear_bonus: int = 50 if success else 0
+	if endless:
+		return "ENDLESS - reached wave %d\nRank %s   Score %d   Kills %d\nCoins earned +%d   Total %d" % [wave_index + 1, rank, score, kills, last_earned, coins]
 	return "Rank %s   Score %d   Kills %d\nNo-glare bonus %d   Clear bonus %d\nCoins earned +%d   Total %d" % [rank, score, kills, no_glare_bonus, clear_bonus, last_earned, coins]
 
 func _build_shop_panel() -> void:

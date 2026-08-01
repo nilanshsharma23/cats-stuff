@@ -18,8 +18,18 @@ signal died
 @export var hurt_time: float = 0.16
 @export var attack_show_time: float = 0.28
 
+# How this rat fights:
+#   chaser     - beelines at you (base rat).
+#   skirmisher - orbits at preferred_range, darts in to poke, then peels away.
+#   bruiser    - slow, no retreat, shrugs off knockback; a walking wall.
+@export var behavior: String = "chaser"
+@export var preferred_range: float = 42.0
+@export var summon_on_enrage: int = 2
+
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var attack_sparkles: CPUParticles2D = $AttackSparkles
+
+const RAT_SCENE: PackedScene = preload("res://scenes/rat.tscn")
 
 var is_boss: bool = false
 var tint: Color = Color.WHITE
@@ -53,12 +63,18 @@ var bleed_timer: float = 0.0
 var bleed_accum: float = 0.0
 var bleed_dps: float = 0.0
 var attack_lock: float = 0.0
+var strafe_sign: float = 1.0
+var retreat_timer: float = 0.0
+var recover_timer: float = 0.0
+var boss_combo_left: int = 0
+var enraged: bool = false
 
 func _ready() -> void:
     add_to_group("rats")
     add_to_group("enemies")
     if is_boss:
         add_to_group("boss")
+    strafe_sign = 1.0 if randf() < 0.5 else -1.0
     dash_timer = randf_range(dash_cooldown_min, dash_cooldown_max)
     health = max_health
     anim.scale = Vector2(body_scale, body_scale)
@@ -141,6 +157,8 @@ func _physics_process(delta: float) -> void:
     parry_window = max(parry_window - delta, 0.0)
     marked_timer = max(marked_timer - delta, 0.0)
     attack_lock = max(attack_lock - delta, 0.0)
+    retreat_timer = max(retreat_timer - delta, 0.0)
+    recover_timer = max(recover_timer - delta, 0.0)
     _tick_bleed(delta)
     if dead:
         return
@@ -170,6 +188,13 @@ func _physics_process(delta: float) -> void:
     if hurt_timer > 0.0:
         velocity = Vector2.ZERO
         _play("hurt_" + _facing())
+        move_and_slide()
+        return
+
+    # Boss recovery: after a dash flurry the Rat King is winded and wide open.
+    if recover_timer > 0.0:
+        velocity = Vector2.ZERO
+        _play("idle_" + _facing())
         move_and_slide()
         return
 
@@ -204,19 +229,24 @@ func _physics_process(delta: float) -> void:
         move_and_slide()
         return
 
-    var direction := _chase_direction(to_player)
-    _face(direction)
+    var aim := to_player.normalized() if to_player != Vector2.ZERO else last_direction
+    _face(aim)
+    var direction := _separate(_behavior_dir(aim, distance))
 
-    if distance <= nibble_range:
+    var can_act := attack_lock <= 0.0
+    if distance <= nibble_range and can_act and retreat_timer <= 0.0:
         velocity = Vector2.ZERO
-        if attack_lock <= 0.0:
-            _try_nibble(direction)
+        _try_nibble(aim)
+        if behavior == "skirmisher":
+            retreat_timer = 0.75   # hit and run: poke, then create space
     else:
         velocity = direction * move_speed
-        if attack_lock <= 0.0 and dash_timer <= 0.0:
+        if can_act and dash_timer <= 0.0:
             dash_timer = randf_range(dash_cooldown_min, dash_cooldown_max)
             if randf() < dash_chance:
-                _begin_windup((player.global_position - global_position).normalized())
+                if is_boss:
+                    boss_combo_left = 3 if enraged else 2   # multi-dash flurry
+                _begin_windup(aim)
                 return
 
     _update_animation()
@@ -231,12 +261,54 @@ func take_damage(amount: int) -> bool:
         health = 0
         _die()
         return true
-    hurt_timer = hurt_time
-    is_dashing = false
-    is_winding = false
-    attack_timer = 0.0
+    # The Rat King has hyper-armor: it won't flinch out of its own attacks
+    # (only a parry-freeze or leer-stun stops it), so you can't cheese it by
+    # mashing. Basics still get staggered.
+    if is_boss:
+        if not enraged and health <= max_health / 2:
+            _boss_enrage()
+    else:
+        hurt_timer = hurt_time
+        is_dashing = false
+        is_winding = false
+        attack_timer = 0.0
+        boss_combo_left = 0
     queue_redraw()
     return false
+
+func _boss_enrage() -> void:
+    enraged = true
+    move_speed *= 1.28
+    dash_speed *= 1.12
+    dash_chance = minf(dash_chance + 0.2, 1.0)
+    dash_cooldown_min = maxf(dash_cooldown_min * 0.6, 0.4)
+    dash_cooldown_max = maxf(dash_cooldown_max * 0.6, 0.9)
+    nibble_interval = maxf(nibble_interval * 0.7, 0.32)
+    tint = Color(1.0, 0.35, 0.3)
+    anim.self_modulate = tint
+    _boss_summon(summon_on_enrage)
+
+# Enrage adds: a couple of fast skirmisher rats to split the player's attention.
+func _boss_summon(count: int) -> void:
+    var parent := get_parent()
+    if parent == null:
+        return
+    for i in count:
+        var minion: Node2D = RAT_SCENE.instantiate() as Node2D
+        if minion == null:
+            continue
+        if minion.has_method("configure"):
+            minion.configure({
+                "max_health": 3, "move_speed": 150.0, "behavior": "skirmisher",
+                "preferred_range": 40.0, "dash_chance": 0.7,
+                "dash_cooldown_min": 0.9, "dash_cooldown_max": 1.6,
+                "body_scale": 0.58, "tint": Color(1.0, 0.55, 0.5), "score_value": 12,
+            })
+        var ang := randf() * TAU
+        minion.global_position = global_position + Vector2(cos(ang), sin(ang)) * randf_range(22.0, 36.0)
+        parent.add_child(minion)
+        if minion.has_signal("died") and parent.has_method("_on_enemy_died"):
+            minion.connect("died", Callable(parent, "_on_enemy_died").bind(minion), CONNECT_ONE_SHOT)
 
 func _hit_feedback() -> void:
     var base := Vector2(body_scale, body_scale)
@@ -308,7 +380,16 @@ func _run_dash(delta: float) -> void:
 
     if dash_time_left <= 0.0:
         is_dashing = false
-        dash_timer = randf_range(dash_cooldown_min, dash_cooldown_max)
+        if is_boss and boss_combo_left > 1:
+            boss_combo_left -= 1
+            var next_dir: Vector2 = (player.global_position - global_position).normalized() if player != null else dash_direction
+            _begin_windup(next_dir)
+        else:
+            boss_combo_left = 0
+            dash_timer = randf_range(dash_cooldown_min, dash_cooldown_max)
+            if is_boss:
+                recover_timer = 0.8   # winded and punishable after the flurry
+                attack_lock = max(attack_lock, 0.8)
 
 func _bite(amount: int) -> void:
     if player == null or not player.has_method("take_damage"):
@@ -325,8 +406,23 @@ func _show_bite(direction: Vector2) -> void:
     attack_sparkles.emitting = true
     queue_redraw()
 
-func _chase_direction(to_player: Vector2) -> Vector2:
-    var base := to_player.normalized() if to_player != Vector2.ZERO else last_direction
+# Pick a heading based on this rat's fighting style. Skirmishers keep their
+# distance and orbit; chasers/bruisers press in (chasers fan out a little so a
+# pack surrounds you rather than stacking into a single conga line).
+func _behavior_dir(aim: Vector2, distance: float) -> Vector2:
+    if behavior == "skirmisher":
+        var strafe := Vector2(-aim.y, aim.x) * strafe_sign
+        if retreat_timer > 0.0 or distance < preferred_range - 6.0:
+            return (-aim * 0.85 + strafe * 0.55).normalized()
+        if distance > preferred_range + 10.0:
+            return (aim * 0.9 + strafe * 0.3).normalized()
+        return strafe
+    var lateral := Vector2(-aim.y, aim.x) * strafe_sign * (0.2 if behavior == "chaser" else 0.0)
+    var d := aim + lateral
+    return d.normalized() if d != Vector2.ZERO else aim
+
+# Soft crowd separation so rats don't pile into a single point.
+func _separate(base_dir: Vector2) -> Vector2:
     var push := Vector2.ZERO
     for other in get_tree().get_nodes_in_group("enemies"):
         if other == self or not is_instance_valid(other):
@@ -335,8 +431,8 @@ func _chase_direction(to_player: Vector2) -> Vector2:
         var distance := away.length()
         if distance > 0.0 and distance < 14.0:
             push += away.normalized() * ((14.0 - distance) / 14.0)
-    var mixed := base + push * 0.35
-    return mixed.normalized() if mixed != Vector2.ZERO else base
+    var mixed := base_dir + push * 0.35
+    return mixed.normalized() if mixed != Vector2.ZERO else base_dir
 
 func _facing() -> String:
     if abs(last_direction.x) >= abs(last_direction.y):

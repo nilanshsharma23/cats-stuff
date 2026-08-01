@@ -16,12 +16,13 @@ signal style_event(kind: String, amount: int)
 @export var paw_cooldown: float = 0.3
 @export var paw_knockback: float = 118.0
 
-# Heavy attack - bite (right mouse tap). Roots the cat for a beat, leaving it
-# vulnerable, but one-shots basics and makes them bleed.
+# Heavy attack - bite (right mouse tap). Roots the cat for a short beat, leaving
+# it vulnerable, but hits like a truck on a single target and makes it bleed.
+# This is your anti-elite / anti-tank button, not your spam button.
 @export var bite_damage: int = 2
 @export var bite_range: float = 37.0
 @export var bite_arc: float = -0.1
-@export var bite_lock: float = 0.86
+@export var bite_lock: float = 0.42
 @export var bite_cooldown: float = 2.35
 @export var bite_knockback: float = 120.0
 @export var bite_bleed_dur: float = 5.0
@@ -42,7 +43,7 @@ signal style_event(kind: String, amount: int)
 @export var leer_cooldown: float = 5.8
 @export var leer_show: float = 0.5
 
-@export var invuln_time: float = 0.34
+@export var invuln_time: float = 0.22
 
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var health_bar: TextureProgressBar = $UI/Control/HealthBar
@@ -168,9 +169,19 @@ func _physics_process(delta: float) -> void:
 		is_dashing = true
 		dash_time_left = dash_duration
 		dash_cd_left = dash_cooldown
-		invuln_timer = max(invuln_timer, dash_duration + 0.05)
+		# The dash only dodges for its own active frames - a tight window on a real
+		# cooldown, not a blanket cloak. The safe, rewarding option is to dash INTO
+		# a telegraphing enemy and PARRY it (below), which pays out far better than
+		# scampering away ever could.
+		invuln_timer = max(invuln_timer, dash_duration)
 		style_event.emit("dash", 2)
-		_try_parry()
+		if _try_parry():
+			# Perfect deflect: refund the dash, refresh i-frames to reposition, and
+			# lick a wound closed. Aggression is the defense.
+			dash_cd_left = 0.0
+			invuln_timer = 0.55
+			health = mini(health + 1, max_health)
+			health_bar.value = health
 		_set_flash(true)
 		return
 
@@ -186,8 +197,10 @@ func _physics_process(delta: float) -> void:
 
 # Sekiro-style deflect: you must dash INTO a telegraphing enemy (dash aimed
 # toward it while its tell is on screen) to freeze it. Dodging away never parries.
-func _try_parry() -> void:
+# Returns true if at least one enemy was deflected, so the caller can reward it.
+func _try_parry() -> bool:
 	SoundManager.play_sound_with_pitch(CAT_PARRY, RandomNumberGenerator.new().randf_range(1.2, 0.8))
+	var parried := false
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e):
 			continue
@@ -201,6 +214,8 @@ func _try_parry() -> void:
 		if dash_direction.dot(to_e.normalized()) > 0.45:
 			e.freeze(2.0)
 			style_event.emit("parry", 24)
+			parried = true
+	return parried
 
 func _aim() -> Vector2:
 	var a := get_global_mouse_position() - global_position
@@ -275,34 +290,28 @@ func _tail() -> void:
 			if e.has_method("knockback"):
 				e.knockback(to_e.normalized() * tail_knockback)
 
+# Each attack has a lane:
+#   paw  - fast, cheap, wide arc: shreds light foes but bounces off tanks.
+#   bite - slow, roots you, but a single-target nuke that chews tanks & elites.
+#   tail - control: low damage, huge knockback to buy space.
+#   leer mark then paw = one-shot EXECUTE on light prey.
 func _damage_for(enemy: Node, move: String, base_damage: int, marked: bool) -> int:
 	var boss: bool = enemy.is_in_group("boss")
-	var rat: bool = enemy.is_in_group("rats")
-	var frog: bool = enemy.is_in_group("frogs")
+	var tanky: bool = not boss and int(enemy.get("max_health")) >= 7
 	var damage: int = base_damage
 	if move == "paw":
-		if rat and not boss:
-			damage = 2
-		elif frog:
-			damage = 1
-		elif boss:
-			damage = 1
+		damage = 1 if tanky else 2
 	elif move == "tail":
-		if frog and not boss:
-			damage = 3
-		elif boss:
-			damage = 1
-		else:
-			damage = 1
+		damage = 1 if boss else 2
 	elif move == "bite":
 		if boss:
 			damage = 8
-		elif frog and not boss:
-			damage = 1
+		elif tanky:
+			damage = 5
 		else:
-			damage = 2
-	if marked and move == "paw":
-		damage += 1
+			damage = 4
+	if marked:
+		damage += 2 if move == "paw" else 1
 	return max(1, damage)
 
 func _show_slash(aim: Vector2, scale_mul: float) -> void:

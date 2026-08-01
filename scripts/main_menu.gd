@@ -29,6 +29,7 @@ func _ready() -> void:
 	$Center/Box/Tutorial.pressed.connect(_on_tutorial)
 	$Center/Box/Shop.pressed.connect(_toggle_shop)
 	$Center/Box/Quit.pressed.connect(_on_quit)
+	_ensure_endless_button()
 	$Center/Box/Play.grab_focus()
 	SoundManager.set_music_volume(0.5)
 	SoundManager.play_music(MAIN_MENU, 0, "Music")
@@ -42,14 +43,33 @@ func _apply_pixel_font(node: Node) -> void:
 
 func _on_play() -> void:
 	get_tree().set_meta("tutorial_enabled", false)
+	get_tree().set_meta("endless_enabled", false)
 	get_tree().change_scene_to_file("res://scenes/level1.tscn")
 
 func _on_tutorial() -> void:
 	get_tree().set_meta("tutorial_enabled", true)
+	get_tree().set_meta("endless_enabled", false)
+	get_tree().change_scene_to_file("res://scenes/level1.tscn")
+
+func _on_endless() -> void:
+	get_tree().set_meta("tutorial_enabled", false)
+	get_tree().set_meta("endless_enabled", true)
 	get_tree().change_scene_to_file("res://scenes/level1.tscn")
 
 func _on_quit() -> void:
 	get_tree().quit()
+
+# Endless lives right under PLAY. Built in code so we don't have to touch the
+# scene; styled to match the other menu buttons.
+func _ensure_endless_button() -> void:
+	var box: VBoxContainer = $Center/Box
+	if box.has_node("Endless"):
+		return
+	var button := _make_button("ENDLESS")
+	button.name = "Endless"
+	button.pressed.connect(_on_endless)
+	box.add_child(button)
+	box.move_child(button, $Center/Box/Play.get_index() + 1)
 
 func _toggle_shop() -> void:
 	shop_panel.visible = not shop_panel.visible
