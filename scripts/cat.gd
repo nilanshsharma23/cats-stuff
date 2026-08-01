@@ -98,11 +98,13 @@ func _ready() -> void:
 	slash.visible = false
 	bite_fx.visible = false
 	tail_sweep.visible = false
+	queue_redraw()
 	slash.animation_finished.connect(func(): slash.visible = false)
 	bite_fx.animation_finished.connect(func(): bite_fx.visible = false)
 	tail_sweep.animation_finished.connect(func(): tail_sweep.visible = false)
 
 func _physics_process(delta: float) -> void:
+	queue_redraw()
 	if dead:
 		velocity = Vector2.ZERO
 		move_and_slide()
@@ -378,6 +380,18 @@ func _leer() -> void:
 			if e.has_method("mark"):
 				e.mark(mark_duration)
 
+# Contact shadow. Together with the sprite's outline shader this is what stops
+# the cat from vanishing into the floor tiles - it anchors her to the ground and
+# gives the eye a high-contrast blob to track in a crowded fight.
+func _draw() -> void:
+	if dead:
+		return
+	var lift: float = 1.0
+	if is_dashing:
+		lift = 0.55
+	draw_circle(Vector2(0.0, 6.0), 4.6 * lift, Color(0.0, 0.0, 0.0, 0.3 * lift))
+	draw_circle(Vector2(0.0, 6.0), 2.8 * lift, Color(0.0, 0.0, 0.0, 0.22 * lift))
+
 func _facing() -> String:
 	if abs(last_direction.x) >= abs(last_direction.y):
 		anim.flip_h = last_direction.x < 0.0
@@ -423,11 +437,36 @@ func take_damage(amount: int) -> bool:
 	SoundManager.play_sound_with_pitch(CAT_HURT, RandomNumberGenerator.new().randf_range(1.2, 0.8))
 	return false
 
+# Picked up a dropped heart. Returns how much actually landed so the pickup can
+# tell the difference between a real top-up and a wasted one.
+func heal(amount: int) -> int:
+	if dead or amount <= 0:
+		return 0
+	var before := health
+	health = mini(health + amount, max_health)
+	health_bar.value = health
+	var gained := health - before
+	if gained > 0:
+		anim.self_modulate = Color(0.6, 1.0, 0.7)
+		create_tween().tween_property(anim, "self_modulate", Color.WHITE, 0.3)
+	return gained
+
 func die() -> void:
 	dead = true
 	modulate = Color(0.4, 0.4, 0.4)
 	_play("idle_" + _facing())
 	died.emit()
+
+# Difficulty handicap, applied by the level once on spawn. Easy hands over a
+# bigger health pool, Hell takes some away; the floor of 4 keeps Hell survivable
+# rather than a one-shot gimmick.
+func apply_difficulty(bonus_hp: int) -> void:
+	if bonus_hp == 0:
+		return
+	max_health = maxi(4, max_health + bonus_hp)
+	health = max_health
+	health_bar.max_value = max_health
+	health_bar.value = health
 
 # --- Between-wave roguelite upgrades (applied by the level's break shop) ---
 

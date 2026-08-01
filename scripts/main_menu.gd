@@ -14,6 +14,18 @@ var shop_panel: Control
 var shop_text: Label
 var upgrade_button: Button
 var shop_status: Label
+var difficulty_panel: Control
+var difficulty: int = 1
+var pending_endless: bool = false
+
+# Mirrors level.gd's table - only the parts the menu needs to describe a mode.
+const DIFFICULTIES := [
+	{"name": "EASY", "blurb": "Slower foes, long tells,\ngenerous hearts, +3 HP.",
+		"colour": Color(0.5, 1.0, 0.62)},
+	{"name": "MEDIUM", "blurb": "The fight as intended.", "colour": Color(1.0, 0.84, 0.35)},
+	{"name": "HELL", "blurb": "Fast and brutal, few hearts,\n-2 HP. Pays 35% more.",
+		"colour": Color(1.0, 0.3, 0.35)},
+]
 
 const MAIN_MENU: AudioStream = preload("uid://b2vea5dv5llnp")
 
@@ -24,6 +36,7 @@ func _ready() -> void:
 	_scale_menu()
 	_ensure_stats()
 	_ensure_shop_panel()
+	_ensure_difficulty_panel()
 	_apply_pixel_font(self)
 	$Center/Box/Play.pressed.connect(_on_play)
 	$Center/Box/Tutorial.pressed.connect(_on_tutorial)
@@ -45,19 +58,26 @@ func _apply_pixel_font(node: Node) -> void:
 	for child in node.get_children():
 		_apply_pixel_font(child)
 
+# PLAY and ENDLESS both route through the difficulty picker; TUTORIAL always
+# starts on EASY, since someone who picked the tutorial is here to learn the
+# buttons, not to be tested on them.
 func _on_play() -> void:
-	get_tree().set_meta("tutorial_enabled", false)
-	get_tree().set_meta("endless_enabled", false)
-	get_tree().change_scene_to_file("res://scenes/level1.tscn")
-
-func _on_tutorial() -> void:
-	get_tree().set_meta("tutorial_enabled", true)
-	get_tree().set_meta("endless_enabled", false)
-	get_tree().change_scene_to_file("res://scenes/level1.tscn")
+	pending_endless = false
+	_open_difficulty()
 
 func _on_endless() -> void:
-	get_tree().set_meta("tutorial_enabled", false)
-	get_tree().set_meta("endless_enabled", true)
+	pending_endless = true
+	_open_difficulty()
+
+func _on_tutorial() -> void:
+	_launch(0, true, false)
+
+func _launch(mode: int, tutorial: bool, endless_mode: bool) -> void:
+	difficulty = clampi(mode, 0, DIFFICULTIES.size() - 1)
+	_save_profile()
+	get_tree().set_meta("difficulty", difficulty)
+	get_tree().set_meta("tutorial_enabled", tutorial)
+	get_tree().set_meta("endless_enabled", endless_mode)
 	get_tree().change_scene_to_file("res://scenes/level1.tscn")
 
 func _on_quit() -> void:
@@ -84,7 +104,7 @@ func _toggle_shop() -> void:
 		$Center/Box/Play.grab_focus()
 
 func _upgrade_glare() -> void:
-	var costs := [0, 90, 220]
+	var costs := [0, 150, 340]
 	if glare_level >= 3:
 		_refresh_shop("Glare is already maxed.")
 		return
@@ -108,7 +128,9 @@ func _load_profile() -> void:
 		last_style = int(config.get_value("shop", "last_style", 0))
 		last_earned = int(config.get_value("shop", "last_earned", 0))
 		last_rank = String(config.get_value("shop", "last_rank", "D"))
+		difficulty = int(config.get_value("options", "difficulty", 1))
 	glare_level = clampi(glare_level, 1, 3)
+	difficulty = clampi(difficulty, 0, DIFFICULTIES.size() - 1)
 
 func _save_profile() -> void:
 	var config := ConfigFile.new()
@@ -120,6 +142,7 @@ func _save_profile() -> void:
 	config.set_value("shop", "last_style", last_style)
 	config.set_value("shop", "last_earned", last_earned)
 	config.set_value("shop", "last_rank", last_rank)
+	config.set_value("options", "difficulty", difficulty)
 	config.save("user://macatre_profile.cfg")
 
 func _scale_menu() -> void:
@@ -227,6 +250,87 @@ func _ensure_shop_panel() -> void:
 	add_child(shop_panel)
 	_refresh_shop()
 
+func _ensure_difficulty_panel() -> void:
+	difficulty_panel = Control.new()
+	difficulty_panel.name = "DifficultyPanel"
+	difficulty_panel.visible = false
+	difficulty_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var dim := ColorRect.new()
+	dim.color = Color(0.01, 0.02, 0.04, 0.86)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	difficulty_panel.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	difficulty_panel.add_child(center)
+	var frame := PanelContainer.new()
+	frame.add_theme_stylebox_override("panel", _panel_box(
+		Color(0.05, 0.06, 0.1, 0.97), Color(1.0, 0.84, 0.35, 0.9)))
+	center.add_child(frame)
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(200, 108)
+	box.add_theme_constant_override("separation", 2)
+	frame.add_child(box)
+	var title := Label.new()
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 11)
+	title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.35, 1))
+	title.text = "PICK YOUR PAIN"
+	box.add_child(title)
+	for i in DIFFICULTIES.size():
+		var mode: Dictionary = DIFFICULTIES[i]
+		var button := _make_button(String(mode["name"]))
+		button.add_theme_color_override("font_color", mode["colour"])
+		button.pressed.connect(_on_difficulty_chosen.bind(i))
+		button.focus_entered.connect(_on_difficulty_focused.bind(i))
+		button.mouse_entered.connect(_on_difficulty_focused.bind(i))
+		box.add_child(button)
+	var blurb := Label.new()
+	blurb.name = "Blurb"
+	blurb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	blurb.custom_minimum_size = Vector2(196, 20)
+	blurb.add_theme_font_size_override("font_size", 7)
+	blurb.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9, 1))
+	box.add_child(blurb)
+	var back := _make_button("BACK")
+	back.pressed.connect(_close_difficulty)
+	box.add_child(back)
+	add_child(difficulty_panel)
+
+func _open_difficulty() -> void:
+	difficulty_panel.visible = true
+	_on_difficulty_focused(difficulty)
+	var box: VBoxContainer = difficulty_panel.get_child(1).get_child(0).get_child(0)
+	# Start on whichever mode was last played.
+	box.get_child(1 + clampi(difficulty, 0, DIFFICULTIES.size() - 1)).grab_focus()
+
+func _close_difficulty() -> void:
+	difficulty_panel.visible = false
+	$Center/Box/Play.grab_focus()
+
+func _on_difficulty_focused(index: int) -> void:
+	var blurb: Label = difficulty_panel.find_child("Blurb", true, false)
+	if blurb != null:
+		blurb.text = String(DIFFICULTIES[index]["blurb"])
+		blurb.add_theme_color_override("font_color", DIFFICULTIES[index]["colour"])
+
+func _on_difficulty_chosen(index: int) -> void:
+	_launch(index, false, pending_endless)
+
+func _panel_box(bg: Color, border: Color) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = bg
+	s.set_border_width_all(1)
+	s.border_color = border
+	s.set_corner_radius_all(3)
+	s.shadow_color = Color(0, 0, 0, 0.5)
+	s.shadow_size = 3
+	s.content_margin_left = 5.0
+	s.content_margin_right = 5.0
+	s.content_margin_top = 4.0
+	s.content_margin_bottom = 4.0
+	return s
+
 func _make_button(text: String) -> Button:
 	var button := Button.new()
 	button.text = text
@@ -237,7 +341,7 @@ func _make_button(text: String) -> Button:
 
 func _refresh_shop(message: String = "") -> void:
 	var stuns := [0.35, 0.6, 0.85]
-	var costs := [0, 90, 220]
+	var costs := [0, 150, 340]
 	var text := "SHOP\nCoins: %d   Best: %d\nGlare L%d: %.2fs paralyze" % [coins, best_score, glare_level, stuns[glare_level - 1]]
 	if glare_level < 3:
 		text += "\nNext: %.2fs for %d coins" % [stuns[glare_level], costs[glare_level]]

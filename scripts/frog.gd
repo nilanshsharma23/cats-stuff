@@ -16,6 +16,16 @@ signal died
 @export var bloodlust_speed_mul: float = 1.32
 @export var max_health: int = 3
 @export var hurt_time: float = 0.22
+
+# Hop dodge. Frogs are squirrely: they skip out of reach when the cat crowds
+# them, and they always bounce away right after eating a hit. The landing
+# recovery is what keeps it fair - a read on the hop is a free punish.
+@export var hop_distance: float = 32.0
+@export var hop_time: float = 0.3
+@export var hop_cooldown: float = 1.15
+@export var hop_alert_range: float = 46.0
+@export var hop_chance: float = 0.72
+@export var hop_recover: float = 0.22
 # chaser - waddles into croak range and holds. kiter (spitters) - keeps its
 # distance, hopping away when you close, and zones you from range.
 @export var behavior: String = "chaser"
@@ -24,7 +34,10 @@ signal died
 @onready var aoe: CPUParticles2D = $Aoe
 
 # How long before impact a dash-parry still connects.
-const PARRY_WINDOW: float = 0.18
+@export var parry_window: float = 0.18
+
+const ARENA_MIN := Vector2(26, 24)
+const ARENA_MAX := Vector2(230, 122)
 
 var is_boss: bool = false
 var tint: Color = Color.WHITE
@@ -51,6 +64,11 @@ var bleed_dps: float = 0.0
 var attack_lock: float = 0.0
 var bite_cd: float = 0.0
 var strafe_sign: float = 1.0
+var is_hopping: bool = false
+var hop_timer: float = 0.0
+var hop_cd: float = 0.0
+var hop_from: Vector2 = Vector2.ZERO
+var hop_to: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
 	# Opt back into pausing: the level root is PROCESS_MODE_ALWAYS and children
@@ -74,12 +92,20 @@ func stun(duration: float) -> void:
 		return
 	stun_timer = max(stun_timer, duration)
 	is_croaking = false
+	_cancel_hop()
 	queue_redraw()
+
+# A hop cannot survive being stunned, frozen or killed mid-air.
+func _cancel_hop() -> void:
+	is_hopping = false
+	hop_timer = 0.0
+	if anim != null:
+		anim.position.y = 0.0
 
 # Deflectable only in the last beat before the croak lands, not for the whole
 # wind-up; the tell flashes white over that window.
 func is_parryable() -> bool:
-	return is_croaking and croak_timer <= PARRY_WINDOW and not dead
+	return is_croaking and croak_timer <= parry_window and not dead
 
 func freeze(duration: float) -> void:
 	if dead:
@@ -87,6 +113,7 @@ func freeze(duration: float) -> void:
 	frozen = true
 	stun_timer = max(stun_timer, duration)
 	is_croaking = false
+	_cancel_hop()
 	velocity = Vector2.ZERO
 	queue_redraw()
 
@@ -134,10 +161,17 @@ func _physics_process(delta: float) -> void:
 	hurt_timer = max(hurt_timer - delta, 0.0)
 	marked_timer = max(marked_timer - delta, 0.0)
 	attack_lock = max(attack_lock - delta, 0.0)
+	hop_cd = max(hop_cd - delta, 0.0)
 	_tick_bleed(delta)
 	if dead:
 		return
 	queue_redraw()
+
+	# A hop in flight owns the frog completely - it cannot be steered or
+	# interrupted, so committing to one is a real (punishable) decision.
+	if is_hopping:
+		_run_hop(delta)
+		return
 
 	if knockback_timer > 0.0:
 		knockback_timer -= delta
@@ -195,6 +229,12 @@ func _physics_process(delta: float) -> void:
 	var aim := to_player.normalized() if to_player != Vector2.ZERO else last_direction
 	_face(aim)
 
+	# Skittish: if the cat is inside swinging distance, hop clear rather than
+	# stand there and eat it.
+	if distance <= hop_alert_range and hop_cd <= 0.0 and attack_lock <= 0.0 and randf() < hop_chance:
+		_begin_hop(-aim)
+		return
+
 	# Kiters hold the edge of their range and peel off when you crowd them,
 	# still spitting as they retreat - so you can't just walk them down.
 	if behavior == "kiter" and distance < croak_range * 0.82:
@@ -221,6 +261,40 @@ func _physics_process(delta: float) -> void:
 		_play("walk_" + _facing())
 
 	move_and_slide()
+
+# Leap in `away` (roughly), with a random sideways lean so a pack of frogs
+# scatters instead of all bouncing along the same line.
+func _begin_hop(away: Vector2) -> void:
+	var dir := away
+	if dir == Vector2.ZERO:
+		dir = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0))
+	dir = dir.normalized()
+	var lateral := Vector2(-dir.y, dir.x) * strafe_sign * randf_range(0.3, 0.85)
+	dir = (dir + lateral).normalized()
+	hop_from = global_position
+	hop_to = _arena_clamp(global_position + dir * hop_distance * randf_range(0.82, 1.15))
+	is_hopping = true
+	hop_timer = hop_time
+	hop_cd = hop_cooldown * randf_range(0.85, 1.25)
+	is_croaking = false
+	_face(dir)
+	_play("croak_" + _facing())
+
+func _run_hop(delta: float) -> void:
+	hop_timer -= delta
+	var t: float = 1.0 - clampf(hop_timer / maxf(hop_time, 0.01), 0.0, 1.0)
+	global_position = hop_from.lerp(hop_to, t)
+	# Vertical arc is pure presentation - the shadow stays on the ground.
+	anim.position.y = -sin(t * PI) * 9.0
+	velocity = Vector2.ZERO
+	if hop_timer <= 0.0:
+		is_hopping = false
+		anim.position.y = 0.0
+		global_position = hop_to
+		attack_lock = max(attack_lock, hop_recover)
+
+func _arena_clamp(p: Vector2) -> Vector2:
+	return Vector2(clampf(p.x, ARENA_MIN.x, ARENA_MAX.x), clampf(p.y, ARENA_MIN.y, ARENA_MAX.y))
 
 func _begin_croak() -> void:
 	is_croaking = true
@@ -255,6 +329,12 @@ func take_damage(amount: int) -> bool:
 		return true
 	hurt_timer = hurt_time
 	is_croaking = false
+	# Startled: bail out of reach the moment it is hit, so landing a second blow
+	# means chasing it down or predicting the hop.
+	if hop_cd <= 0.0 and player != null and is_instance_valid(player):
+		var away: Vector2 = global_position - player.global_position
+		_begin_hop(away if away != Vector2.ZERO else last_direction)
+		hurt_timer = 0.0
 	queue_redraw()
 	return false
 
@@ -269,6 +349,7 @@ func _die() -> void:
 	dead = true
 	velocity = Vector2.ZERO
 	is_croaking = false
+	_cancel_hop()
 	modulate = Color.WHITE
 	queue_redraw()
 	remove_from_group("enemies")
@@ -321,6 +402,11 @@ func _play(name: String) -> void:
 		anim.play(name)
 
 func _draw() -> void:
+	if is_hopping:
+		# Ground shadow shrinks as the frog rises, selling the arc.
+		var t: float = 1.0 - clampf(hop_timer / maxf(hop_time, 0.01), 0.0, 1.0)
+		var lift: float = sin(t * PI)
+		draw_circle(Vector2(0.0, 4.0), 4.0 - 1.6 * lift, Color(0.0, 0.0, 0.0, 0.3 - 0.12 * lift))
 	if is_croaking:
 		_draw_croak_tell()
 	if bleed_timer > 0.0:
@@ -337,7 +423,7 @@ func _draw_croak_tell() -> void:
 	var t: float = 1.0 - clamp(croak_timer / croak_windup, 0.0, 1.0)
 	var r: float = aoe_radius * (0.35 + 0.65 * t)
 	var a: float = 0.22 + 0.4 * t
-	var open: bool = croak_timer <= PARRY_WINDOW
+	var open: bool = croak_timer <= parry_window
 	var ring := Color(0.75, 1.0, 1.0, 0.95) if open else Color(0.3, 1.0, 0.45, a)
 	draw_arc(Vector2.ZERO, r, 0.0, TAU, 40, ring, 2.0 if open else 1.5, true)
 	draw_arc(Vector2.ZERO, r * 0.6, 0.0, TAU, 28, Color(0.55, 1.0, 0.6, a * 0.55), 1.0, true)

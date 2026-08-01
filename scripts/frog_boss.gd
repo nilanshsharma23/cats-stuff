@@ -24,7 +24,7 @@ const ARENA_MAX := Vector2(228, 120)
 const FROG_SCENE: PackedScene = preload("res://scenes/frog.tscn")
 
 # How long before impact a dash-parry still connects.
-const PARRY_WINDOW: float = 0.2
+@export var parry_window: float = 0.2
 
 var boss_name: String = "THE BOG BARON"
 var player: Node2D = null
@@ -72,7 +72,7 @@ func stun(duration: float) -> void:
 
 # Deflectable only in the last beat of a wind-up, not for its whole duration.
 func is_parryable() -> bool:
-	return attack_kind.ends_with("_windup") and attack_timer <= PARRY_WINDOW and not dead
+	return attack_kind.ends_with("_windup") and attack_timer <= parry_window and not dead
 
 func freeze(duration: float) -> void:
 	if dead:

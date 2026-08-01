@@ -33,7 +33,7 @@ signal died
 const RAT_SCENE: PackedScene = preload("res://scenes/rat.tscn")
 
 # How long before impact a dash-parry still connects.
-const PARRY_WINDOW: float = 0.18
+@export var parry_window: float = 0.18
 
 var is_boss: bool = false
 var tint: Color = Color.WHITE
@@ -109,9 +109,9 @@ func is_parryable() -> bool:
     if dead:
         return false
     if is_nibbling:
-        return nibble_wind_timer <= PARRY_WINDOW
+        return nibble_wind_timer <= parry_window
     if is_winding:
-        return wind_timer <= PARRY_WINDOW
+        return wind_timer <= parry_window
     return false
 
 func freeze(duration: float) -> void:
@@ -497,7 +497,7 @@ func _draw() -> void:
     if is_winding:
         var t: float = 1.0 - clamp(wind_timer / dash_windup, 0.0, 1.0)
         var reach: float = dash_speed * dash_duration
-        var col := Color(0.75, 1.0, 1.0, 0.95) if wind_timer <= PARRY_WINDOW else Color(1.0, 0.15, 0.15, 0.45 + 0.45 * t)
+        var col := Color(0.75, 1.0, 1.0, 0.95) if wind_timer <= parry_window else Color(1.0, 0.15, 0.15, 0.45 + 0.45 * t)
         var tip: Vector2 = wind_dir * reach
         var side := Vector2(-wind_dir.y, wind_dir.x) * nibble_range
         draw_line(side * 0.45, tip + side * 0.45, col, 1.2)
@@ -506,7 +506,7 @@ func _draw() -> void:
         draw_circle(Vector2.ZERO, 1.5 + 1.5 * t, Color(1.0, 0.1, 0.1, 0.85))
     if is_nibbling:
         var nt: float = 1.0 - clamp(nibble_wind_timer / maxf(nibble_windup, 0.01), 0.0, 1.0)
-        var open: bool = nibble_wind_timer <= PARRY_WINDOW
+        var open: bool = nibble_wind_timer <= parry_window
         var ncol := Color(0.75, 1.0, 1.0, 0.95) if open else Color(1.0, 0.3, 0.15, 0.35 + 0.5 * nt)
         var bite_at: Vector2 = nibble_dir * nibble_range * 0.55
         draw_arc(bite_at, nibble_range * (1.0 - 0.35 * nt), 0.0, TAU, 20, ncol, 1.4 if not open else 2.0, true)

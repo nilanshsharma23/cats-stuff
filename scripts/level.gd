@@ -2,6 +2,8 @@ extends Node2D
 
 const UI_FONT: FontFile = preload("res://fonts/Pixellari.ttf")
 const SPAWN_MARKER: GDScript = preload("res://scripts/spawn_marker.gd")
+const PICKUP: GDScript = preload("res://scripts/pickup.gd")
+const VIGNETTE: GDScript = preload("res://scripts/vignette.gd")
 
 @export var level_id: int = 1
 @export var next_level_path: String = ""
@@ -39,13 +41,15 @@ var ROSTER := {
 	"frog": {
 		"scene": "frog",
 		"cfg": {"max_health": 5, "move_speed": 86.0, "aoe_damage": 1, "croak_cooldown": 2.1, "croak_range": 32.0, "bloodlust_speed_mul": 1.48,
-			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 24}
+			"hop_cooldown": 1.2, "hop_chance": 0.7, "hop_distance": 31.0,
+			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 26}
 	},
 	"spitter": {
 		"scene": "frog",
 		"cfg": {"max_health": 5, "move_speed": 90.0, "croak_cooldown": 1.55, "bloodlust_speed_mul": 1.28,
 			"behavior": "kiter", "croak_range": 54.0, "aoe_radius": 32.0, "croak_windup": 0.5,
-			"tint": Color(0.5, 0.82, 1.0), "body_scale": 0.7, "score_value": 30}
+			"hop_cooldown": 0.92, "hop_chance": 0.85, "hop_distance": 38.0, "hop_alert_range": 56.0,
+			"tint": Color(0.5, 0.82, 1.0), "body_scale": 0.7, "score_value": 34}
 	},
 	"boss": {
 		"scene": "rat",
@@ -74,6 +78,30 @@ var ROSTER := {
 
 const BOSS_NAME := "THE RAT KING"
 
+# Difficulty. Rather than one blunt HP multiplier, each mode moves the knobs
+# that actually decide whether a fight feels fair: how long a telegraph is
+# readable for, how forgiving the parry timing is, and how often the game hands
+# you a heart when you are hurting. Hell pays better because it should.
+const DIFFICULTIES := [
+	{"name": "EASY", "blurb": "Slower foes, long tells, generous hearts.",
+		"colour": Color(0.5, 1.0, 0.62),
+		"enemy_hp": 0.76, "enemy_speed": 0.9, "windup": 1.4, "parry": 0.28,
+		"drop": 1.7, "bonus_hp": 3, "coin": 0.85, "ramp": 0.6, "dodge": 0.65},
+	{"name": "MEDIUM", "blurb": "The fight as intended.",
+		"colour": Color(1.0, 0.84, 0.35),
+		"enemy_hp": 1.0, "enemy_speed": 1.0, "windup": 1.0, "parry": 0.18,
+		"drop": 1.0, "bonus_hp": 0, "coin": 1.0, "ramp": 1.0, "dodge": 1.0},
+	{"name": "HELL", "blurb": "Fast, brutal, barely any mercy. Pays best.",
+		"colour": Color(1.0, 0.3, 0.35),
+		"enemy_hp": 1.32, "enemy_speed": 1.12, "windup": 0.78, "parry": 0.12,
+		"drop": 0.5, "bonus_hp": -2, "coin": 1.35, "ramp": 1.4, "dodge": 1.18},
+]
+
+var difficulty: int = 1
+
+func _diff() -> Dictionary:
+	return DIFFICULTIES[clampi(difficulty, 0, DIFFICULTIES.size() - 1)]
+
 var waves: Array = []
 var wave_index: int = -1
 var cleared: bool = false
@@ -93,6 +121,7 @@ var tutorial_step: int = 0
 var endless: bool = false
 var pending_spawns: int = 0
 var best_chain: int = 0
+var kills_since_heart: int = 0
 var last_earned: int = 0
 var result_path: String = ""
 var reward_timer: float = 0.0
@@ -111,7 +140,6 @@ var result_shop: Button
 var result_menu: Button
 var tutorial_panel: Control
 var tutorial_text: Label
-var tutorial_button: Button
 var shop_panel: Control
 var shop_text: Label
 var shop_status: Label
@@ -124,6 +152,9 @@ var ability_panel: HBoxContainer
 var ability_slots: Dictionary = {}
 var hud_panel: ColorRect
 var score_panel: ColorRect
+var danger_vignette: Control
+var style_bar_bg: ColorRect
+var style_bar_fill: ColorRect
 var pause_panel: Control
 var pause_resume: Button
 var pause_retry: Button
@@ -169,6 +200,10 @@ func _ready() -> void:
 	Engine.time_scale = 1.0
 	rng.randomize()
 	_load_profile()
+	# Meta survives a scene reload (so RETRY keeps the mode); the profile is the
+	# fallback when the game was just launched.
+	difficulty = clampi(int(get_tree().get_meta("difficulty", difficulty)), 0, DIFFICULTIES.size() - 1)
+	get_tree().set_meta("difficulty", difficulty)
 	tutorial_enabled = bool(get_tree().get_meta("tutorial_enabled", false))
 	get_tree().set_meta("tutorial_enabled", false)
 	# Endless: kept set across scene reloads so RETRY / PLAY AGAIN stay endless;
@@ -177,10 +212,12 @@ func _ready() -> void:
 	if endless:
 		tutorial_enabled = false
 	banner.modulate.a = 0.0
+	_dim_floor()
 	_setup_camera()
 	_build_result_panel()
 	_build_hud()
 	_build_ability_bar()
+	_build_vignette()
 	_build_flash()
 	_build_boss_bar()
 	_build_shop_panel()
@@ -194,11 +231,16 @@ func _ready() -> void:
 			cat.died.connect(_on_cat_died)
 		if cat.has_signal("style_event"):
 			cat.style_event.connect(_on_style_event)
-	_build_waves()
-	_next_wave()
-	_sync_fight_ui()
+		if cat.has_method("apply_difficulty"):
+			cat.apply_difficulty(int(_diff()["bonus_hp"]))
+	# The coached tutorial runs first and only releases the real waves once every
+	# lesson has actually been performed.
 	if tutorial_enabled:
-		_show_tutorial_step()
+		_start_tutorial()
+	else:
+		_build_waves()
+		_next_wave()
+	_sync_fight_ui()
 
 func _process(delta: float) -> void:
 	if get_tree().paused:
@@ -213,14 +255,33 @@ func _process(delta: float) -> void:
 		reward_label.modulate.a = clamp(reward_timer, 0.0, 1.0)
 	else:
 		reward_label.modulate.a = 0.0
+	_tick_tutorial(delta)
 	_update_shake(delta)
 	_update_boss_bar()
 	_update_ability_bar()
+	_update_danger(delta)
 	_refresh_hud()
 	_sync_fight_ui()
 
 func _is_fight_active() -> bool:
+	if tutorial_active:
+		return true
 	return not cleared and not get_tree().paused and (_live_enemy_count() > 0 or boss_active or pending_spawns > 0)
+
+# Red edge-pulse that ramps up as the cat gets low. Purely a readability aid -
+# health is otherwise a small bar in the corner you have to look away to read.
+func _update_danger(_delta: float) -> void:
+	if danger_vignette == null:
+		return
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat == null or not is_instance_valid(cat) or bool(cat.get("dead")):
+		danger_vignette.set_intensity(0.0)
+		return
+	var hp := float(cat.get("health"))
+	var max_hp := maxf(float(cat.get("max_health")), 1.0)
+	var frac := hp / max_hp
+	# Silent above a third health, then climbs hard.
+	danger_vignette.set_intensity(clampf((0.34 - frac) / 0.34, 0.0, 1.0))
 
 func _set_player_health_visible(shown: bool) -> void:
 	var cat := get_tree().get_first_node_in_group("player")
@@ -232,7 +293,7 @@ func _sync_fight_ui() -> void:
 	var boss_fight: bool = shown and boss_active
 	_set_player_health_visible(shown)
 	# Bottom HUD (player card, rank, abilities) is always up during a fight.
-	for n in [combo_label, ability_panel]:
+	for n in [combo_label, ability_panel, style_bar_bg, style_bar_fill]:
 		if n != null:
 			n.visible = shown
 	# The top wave/score plates step aside for the boss bar so nothing stacks.
@@ -246,6 +307,15 @@ func _sync_fight_ui() -> void:
 
 # --- Game feel helpers -------------------------------------------------------
 
+# Knock the floor back a touch and cool it slightly. The tiles and the cat share
+# a lot of midtone, so pushing the background down is half of what makes the
+# actors readable (the sprite outline shader is the other half). Done here
+# rather than per-scene so every level gets it.
+func _dim_floor() -> void:
+	var tiles := get_node_or_null("TileMap")
+	if tiles is CanvasItem:
+		(tiles as CanvasItem).modulate = Color(0.72, 0.75, 0.86, 1.0)
+
 func _setup_camera() -> void:
 	cam = Camera2D.new()
 	cam.position = Vector2(128, 72)
@@ -253,6 +323,11 @@ func _setup_camera() -> void:
 	cam.zoom = Vector2(1.04, 1.04)
 	add_child(cam)
 	cam.make_current()
+
+func _build_vignette() -> void:
+	danger_vignette = VIGNETTE.new()
+	danger_vignette.name = "DangerVignette"
+	$UI.add_child(danger_vignette)
 
 func _build_flash() -> void:
 	flash_rect = ColorRect.new()
@@ -266,6 +341,15 @@ func _build_flash() -> void:
 func _update_shake(delta: float) -> void:
 	if cam == null:
 		return
+	# The arena is a single fixed screen, so the camera cannot follow - but a few
+	# pixels of lean toward the cat keeps it from feeling like a static diorama.
+	var lean := Vector2.ZERO
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat != null and is_instance_valid(cat):
+		lean = (cat.global_position - Vector2(128, 72)) * 0.055
+		lean.x = clampf(lean.x, -6.0, 6.0)
+		lean.y = clampf(lean.y, -4.0, 4.0)
+	cam.position = cam.position.lerp(Vector2(128, 72) + lean, clampf(delta * 3.5, 0.0, 1.0))
 	if shake_amt > 0.05:
 		shake_amt = max(shake_amt - 26.0 * delta, 0.0)
 		cam.offset = Vector2(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)) * shake_amt
@@ -328,9 +412,11 @@ func _spawn_popup(pos: Vector2, text: String) -> void:
 	t.tween_callback(l.queue_free)
 
 func _hide_hud() -> void:
-	for n in [hud_panel, score_panel, wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel, ability_panel]:
+	for n in [hud_panel, score_panel, wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel, ability_panel, style_bar_bg, style_bar_fill]:
 		if n != null:
 			n.visible = false
+	if danger_vignette != null:
+		danger_vignette.set_intensity(0.0)
 	var cat := get_tree().get_first_node_in_group("player")
 	if cat != null and cat.has_node("UI/Control"):
 		cat.get_node("UI/Control").visible = false
@@ -480,21 +566,36 @@ func _next_wave() -> void:
 # numbers and mix, not HP sponges. Bosses scale gently by level only.
 func _scaled_cfg(cfg: Dictionary, scene_key: String) -> Dictionary:
 	var out: Dictionary = cfg.duplicate(true)
+	var mode := _diff()
+	out["parry_window"] = float(mode["parry"])
 	if bool(out.get("is_boss", false)):
-		out["max_health"] = int(round(float(out.get("max_health", 40)) * (1.0 + 0.1 * float(level_id - 1))))
+		var boss_hp := float(out.get("max_health", 40)) * (1.0 + 0.1 * float(level_id - 1))
+		out["max_health"] = maxi(1, int(round(boss_hp * float(mode["enemy_hp"]))))
 		return out
-	var wave := float(maxi(wave_index, 0))
-	out["max_health"] = maxi(1, int(round(float(out.get("max_health", 3)) * minf(1.0 + 0.1 * wave, 2.1))))
+	# Wave ramp is scaled by the mode, so Easy stays gentle deep into a level and
+	# Hell gets nasty fast.
+	var wave := float(maxi(wave_index, 0)) * float(mode["ramp"])
+	var hp := float(out.get("max_health", 3)) * minf(1.0 + 0.1 * wave, 2.1) * float(mode["enemy_hp"])
+	out["max_health"] = maxi(1, int(round(hp)))
 	if out.has("move_speed"):
-		out["move_speed"] = float(out["move_speed"]) * minf(1.0 + 0.018 * wave, 1.14)
+		out["move_speed"] = float(out["move_speed"]) * minf(1.0 + 0.018 * wave, 1.14) * float(mode["enemy_speed"])
 	# Deeper waves swing sooner and more often. That is pressure the player can
 	# still read and dodge, unlike raw HP, which only makes fights longer.
+	var windup := float(mode["windup"])
 	if scene_key == "rat":
-		out["nibble_windup"] = maxf(float(out.get("nibble_windup", 0.26)) - 0.012 * wave, 0.16)
+		out["nibble_windup"] = maxf(float(out.get("nibble_windup", 0.26)) - 0.012 * wave, 0.16) * windup
 		out["nibble_interval"] = maxf(float(out.get("nibble_interval", 0.72)) - 0.03 * wave, 0.42)
+		out["dash_windup"] = float(out.get("dash_windup", 0.32)) * windup
 	elif scene_key == "frog":
-		out["croak_windup"] = maxf(float(out.get("croak_windup", 0.55)) - 0.02 * wave, 0.34)
+		out["croak_windup"] = maxf(float(out.get("croak_windup", 0.55)) - 0.02 * wave, 0.34) * windup
 		out["croak_cooldown"] = maxf(float(out.get("croak_cooldown", 2.35)) - 0.09 * wave, 1.2)
+		# Easy frogs still hop, just less often - slippery, not maddening.
+		var dodge := float(mode["dodge"])
+		out["hop_cooldown"] = maxf(float(out.get("hop_cooldown", 1.15)) - 0.05 * wave, 0.72) / maxf(dodge, 0.1)
+		out["hop_chance"] = clampf(float(out.get("hop_chance", 0.72)) * dodge, 0.0, 1.0)
+	# Skirmisher rats dodge on the same dial so both archetypes read consistently.
+	if scene_key == "rat" and String(out.get("behavior", "chaser")) == "skirmisher":
+		out["dash_chance"] = clampf(float(out.get("dash_chance", 0.62)) * float(mode["dodge"]), 0.0, 1.0)
 	return out
 
 # Staggered spawn: wait out the batch delay, flash a converging marker at the
@@ -590,12 +691,56 @@ func _on_enemy_died(enemy: Node) -> void:
 	score += gained
 	if enemy != null and is_instance_valid(enemy):
 		_spawn_popup(enemy.global_position, "+%d" % gained)
+		_maybe_drop_heart(enemy.global_position)
 	_flash(Color(1.0, 0.82, 0.35), 0.16)
 	_shake(1.2)
 	_on_style_event("enemy_down", 18)
+	if tutorial_active:
+		return
 	if not cleared and not boss_active and _live_enemy_count() == 0 and pending_spawns == 0:
 		_award_wave_clear()
 		call_deferred("_finish_wave_after_delay")
+
+# Hearts drop on a curve, not a flat roll: at full health they are rare (you do
+# not need them), and the odds climb steeply as the cat gets hurt. A pity timer
+# guarantees one if a wounded player has gone a long dry spell, so a bad streak
+# never turns into an unwinnable one.
+func _maybe_drop_heart(at: Vector2) -> void:
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat == null or not is_instance_valid(cat) or bool(cat.get("dead")):
+		return
+	var hp := float(cat.get("health"))
+	var max_hp := maxf(float(cat.get("max_health")), 1.0)
+	var missing: float = clampf(1.0 - hp / max_hp, 0.0, 1.0)
+	if missing <= 0.001:
+		kills_since_heart += 1
+		return
+	var drop_mul := float(_diff()["drop"])
+	var chance: float = (0.05 + 0.34 * missing * missing) * drop_mul
+	var desperate: bool = hp <= 2.0
+	if desperate:
+		chance = maxf(chance, 0.32 * drop_mul)
+	kills_since_heart += 1
+	var pity: int = int(round((8.0 if desperate else 16.0) / maxf(drop_mul, 0.2)))
+	if rng.randf() >= chance and kills_since_heart < pity:
+		return
+	kills_since_heart = 0
+	_drop_heart(at)
+
+func _drop_heart(at: Vector2) -> void:
+	var heart: Node2D = PICKUP.new()
+	heart.kind = "health"
+	heart.amount = 2
+	heart.position = Vector2(clampf(at.x, 16.0, 240.0), clampf(at.y, 16.0, 130.0))
+	heart.collected.connect(_on_pickup_collected)
+	add_child(heart)
+
+func _on_pickup_collected(_kind: String) -> void:
+	_flash(Color(0.5, 1.0, 0.6), 0.2)
+	_set_reward("Patched up! +2 HP")
+	var cat := get_tree().get_first_node_in_group("player")
+	var at: Vector2 = cat.global_position if cat != null and is_instance_valid(cat) else Vector2(128, 60)
+	_spawn_popup(at, "+2 HP")
 
 func _finish_wave_after_delay() -> void:
 	await get_tree().create_timer(2.0).timeout
@@ -653,13 +798,13 @@ func _wave_enemy_count(index: int) -> int:
 	return total
 
 func _hp_cost() -> int:
-	return 18 + hp_buys * 14
+	return 26 + hp_buys * 20
 
 func _dash_cost() -> int:
-	return 82 + dash_buys * 68
+	return 105 + dash_buys * 85
 
 func _leer_cost() -> int:
-	return 110 + leer_buys * 90
+	return 135 + leer_buys * 110
 
 func _start_break() -> void:
 	if cleared:
@@ -752,10 +897,14 @@ func _build_break_panel() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	break_panel.add_child(center)
+	var frame := PanelContainer.new()
+	frame.add_theme_stylebox_override("panel", _panel_box(
+		Color(0.05, 0.09, 0.12, 0.97), Color(0.5, 1.0, 0.85, 0.85)))
+	center.add_child(frame)
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(228, 130)
+	box.custom_minimum_size = Vector2(222, 126)
 	box.add_theme_constant_override("separation", 1)
-	center.add_child(box)
+	frame.add_child(box)
 	var title := Label.new()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 13)
@@ -826,7 +975,7 @@ func _input(event: InputEvent) -> void:
 		get_tree().reload_current_scene()
 
 func _toggle_pause() -> void:
-	if cleared or game_over.visible or tutorial_panel.visible or break_panel.visible or shop_panel.visible:
+	if cleared or game_over.visible or break_panel.visible or shop_panel.visible:
 		return
 	var paused := not get_tree().paused
 	get_tree().paused = paused
@@ -872,6 +1021,7 @@ func _show_banner(text: String) -> void:
 	create_tween().tween_property(banner, "modulate:a", 0.0, 1.4)
 
 func _on_style_event(kind: String, amount: int) -> void:
+	_tutorial_credit(kind)
 	if kind == "multi":
 		_hitstop(0.05, 0.08)
 		_multikill(amount)
@@ -986,8 +1136,24 @@ func _build_hud() -> void:
 	# outline is what keeps it legible over the floor.
 	wave_label = _hud_label(Vector2(8, 4), Vector2(104, 9), Color(0.96, 0.92, 0.74, 1.0), 6, HORIZONTAL_ALIGNMENT_LEFT)
 	score_label = _hud_label(Vector2(180, 5), Vector2(68, 16), Color(0.95, 0.96, 1.0, 1.0), 6, HORIZONTAL_ALIGNMENT_RIGHT)
-	combo_label = _hud_label(Vector2(9, 110), Vector2(92, 16), Color(1.0, 0.82, 0.25, 1.0), 7, HORIZONTAL_ALIGNMENT_LEFT)
+	combo_label = _hud_label(Vector2(9, 108), Vector2(92, 16), Color(1.0, 0.82, 0.25, 1.0), 7, HORIZONTAL_ALIGNMENT_LEFT)
 	combo_label.add_theme_constant_override("outline_size", 4)
+	# Slim bar under the rank showing progress toward the next tier, so style is
+	# something you watch climb instead of a word that changes at random.
+	style_bar_bg = ColorRect.new()
+	style_bar_bg.name = "StyleBarBg"
+	style_bar_bg.position = Vector2(9, 125)
+	style_bar_bg.size = Vector2(74, 3)
+	style_bar_bg.color = Color(0.03, 0.03, 0.05, 0.72)
+	style_bar_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$UI.add_child(style_bar_bg)
+	style_bar_fill = ColorRect.new()
+	style_bar_fill.name = "StyleBarFill"
+	style_bar_fill.position = Vector2(10, 126)
+	style_bar_fill.size = Vector2(0, 1)
+	style_bar_fill.color = Color(1.0, 0.82, 0.25, 1.0)
+	style_bar_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$UI.add_child(style_bar_fill)
 	enemies_label = _hud_label(Vector2(0, 0), Vector2(1, 1), Color(1.0, 0.62, 0.55, 1.0), 7, HORIZONTAL_ALIGNMENT_RIGHT)
 	enemies_label.visible = false
 	reward_label = _hud_label(Vector2(48, 98), Vector2(160, 10), Color(0.55, 1.0, 0.86, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
@@ -1125,13 +1291,29 @@ func _refresh_hud() -> void:
 		return
 	var rank := _style_rank()
 	var left := _live_enemy_count()
+	# Mode is tagged onto the wave plate rather than announced once, so you can
+	# always see what you signed up for. MEDIUM is the default and stays unmarked.
+	var tag := "" if difficulty == 1 else "  %s" % String(_diff()["name"])
 	if endless:
-		wave_label.text = "ENDLESS  W%d   LEFT %02d" % [wave_index + 1, left]
+		wave_label.text = "ENDLESS  W%d   LEFT %02d%s" % [wave_index + 1, left, tag]
 	else:
-		wave_label.text = "WAVE %d/%d   LEFT %02d" % [clampi(wave_index + 1, 1, _normal_wave_count()), _normal_wave_count(), left]
+		wave_label.text = "WAVE %d/%d   LEFT %02d%s" % [clampi(wave_index + 1, 1, _normal_wave_count()), _normal_wave_count(), left, tag]
 	score_label.text = "KILLS %d\nCOIN %d" % [kills, coins]
 	combo_label.text = "%s\n%d PTS" % [rank, score]
-	combo_label.add_theme_color_override("font_color", _rank_color(rank))
+	var rank_col := _rank_color(rank)
+	combo_label.add_theme_color_override("font_color", rank_col)
+	if style_bar_fill != null:
+		style_bar_fill.size = Vector2(72.0 * _rank_fraction(), 1)
+		style_bar_fill.color = rank_col
+
+# How far the style meter has climbed through the current rank band, 0..1.
+func _rank_fraction() -> float:
+	var tiers := [0.0, 70.0, 150.0, 260.0, 390.0, 560.0]
+	for i in range(tiers.size() - 1):
+		if style_meter < tiers[i + 1]:
+			var span: float = tiers[i + 1] - tiers[i]
+			return clampf((style_meter - tiers[i]) / maxf(span, 1.0), 0.0, 1.0)
+	return 1.0
 
 func _rank_color(rank: String) -> Color:
 	if rank == "SS - Ssuper Smexxy":
@@ -1219,11 +1401,16 @@ func _build_result_panel() -> void:
 	center.name = "Center"
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	game_over.add_child(center)
+	var frame := PanelContainer.new()
+	frame.name = "Frame"
+	frame.add_theme_stylebox_override("panel", _panel_box(
+		Color(0.07, 0.05, 0.08, 0.97), Color(1.0, 0.45, 0.35, 0.85)))
+	center.add_child(frame)
 	var box := VBoxContainer.new()
 	box.name = "Box"
-	box.custom_minimum_size = Vector2(216, 116)
+	box.custom_minimum_size = Vector2(210, 112)
 	box.add_theme_constant_override("separation", 2)
-	center.add_child(box)
+	frame.add_child(box)
 	result_title = Label.new()
 	result_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	result_title.add_theme_font_size_override("font_size", 18)
@@ -1268,11 +1455,12 @@ func _finish_run(title: String, success: bool) -> void:
 
 func _result_summary(success: bool) -> String:
 	var rank := _style_rank()
-	var combo_bonus: int = mini(best_chain * 2, 50)
-	var clear_bonus: int = 50 if success else 0
+	var combo_bonus: int = mini(best_chain, 25)
+	var clear_bonus: int = 30 if success else 0
+	var mode := String(_diff()["name"])
 	if endless:
-		return "ENDLESS - reached wave %d\nRank %s   Score %d   Kills %d\nBest chain x%d\nCoins earned +%d   Total %d" % [wave_index + 1, rank, score, kills, best_chain, last_earned, coins]
-	return "Rank %s   Score %d   Kills %d\nChain bonus %d   Clear bonus %d\nCoins earned +%d   Total %d" % [rank, score, kills, combo_bonus, clear_bonus, last_earned, coins]
+		return "ENDLESS (%s) - reached wave %d\nRank %s   Score %d   Kills %d\nBest chain x%d\nCoins earned +%d   Total %d" % [mode, wave_index + 1, rank, score, kills, best_chain, last_earned, coins]
+	return "%s   Rank %s   Score %d   Kills %d\nChain bonus %d   Clear bonus %d\nCoins earned +%d   Total %d" % [mode, rank, score, kills, combo_bonus, clear_bonus, last_earned, coins]
 
 func _build_shop_panel() -> void:
 	shop_panel = Control.new()
@@ -1287,10 +1475,14 @@ func _build_shop_panel() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	shop_panel.add_child(center)
+	var frame := PanelContainer.new()
+	frame.add_theme_stylebox_override("panel", _panel_box(
+		Color(0.06, 0.06, 0.1, 0.97), Color(1.0, 0.84, 0.35, 0.85)))
+	center.add_child(frame)
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(216, 112)
+	box.custom_minimum_size = Vector2(210, 108)
 	box.add_theme_constant_override("separation", 2)
-	center.add_child(box)
+	frame.add_child(box)
 	shop_text = Label.new()
 	shop_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	shop_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1331,6 +1523,23 @@ func _make_button(text: String) -> Button:
 	button.add_theme_color_override("font_color", Color(0.92, 0.9, 0.94, 1))
 	return button
 
+# Shared look for every framed card (tutorial coach, break, pause, results):
+# soft rounded corners, a coloured hairline border and a drop shadow, so the
+# menus read as one deliberate set instead of raw black rectangles.
+func _panel_box(bg: Color, border: Color) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = bg
+	s.set_border_width_all(1)
+	s.border_color = border
+	s.set_corner_radius_all(3)
+	s.shadow_color = Color(0, 0, 0, 0.5)
+	s.shadow_size = 3
+	s.content_margin_left = 5.0
+	s.content_margin_right = 5.0
+	s.content_margin_top = 4.0
+	s.content_margin_bottom = 4.0
+	return s
+
 func _button_box(bg: Color, border: Color) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = bg
@@ -1354,7 +1563,7 @@ func _close_shop() -> void:
 		result_shop.grab_focus()
 
 func _upgrade_glare() -> void:
-	var costs := [0, 90, 220]
+	var costs := [0, 150, 340]
 	if glare_level >= 3:
 		_refresh_shop("Glare is maxed.")
 		return
@@ -1371,7 +1580,7 @@ func _upgrade_glare() -> void:
 
 func _refresh_shop(message: String = "") -> void:
 	var stuns := [0.35, 0.6, 0.85]
-	var costs := [0, 90, 220]
+	var costs := [0, 150, 340]
 	var text := "SHOP\nCoins: %d   Glare L%d %.2fs" % [coins, glare_level, stuns[glare_level - 1]]
 	if glare_level < 3:
 		text += "\nNext %.2fs costs %d" % [stuns[glare_level], costs[glare_level]]
@@ -1398,10 +1607,14 @@ func _build_pause_panel() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	pause_panel.add_child(center)
+	var frame := PanelContainer.new()
+	frame.add_theme_stylebox_override("panel", _panel_box(
+		Color(0.05, 0.05, 0.08, 0.97), Color(1.0, 0.84, 0.35, 0.85)))
+	center.add_child(frame)
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(176, 82)
+	box.custom_minimum_size = Vector2(170, 78)
 	box.add_theme_constant_override("separation", 3)
-	center.add_child(box)
+	frame.add_child(box)
 	var title := Label.new()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 16)
@@ -1419,56 +1632,228 @@ func _build_pause_panel() -> void:
 	box.add_child(pause_menu)
 	$UI.add_child(pause_panel)
 
+# --- Coached tutorial -------------------------------------------------------
+#
+# One idea at a time: read it, then do it. Every step names its input, states
+# what the move is FOR, and waits on the player actually performing it - no
+# wall of text up front, and no way to skip past something untried.
+#
+#   goal    - the style_event kind that counts as progress ("move"/"aim" are
+#             polled instead, since the cat does not emit those)
+#   need    - how many times to do it
+#   dummies - practice rats to keep alive during the step
+#   armed   - dummies that wind up attacks (for the parry lesson)
+const TUTORIAL_STEPS := [
+	{"title": "PROWL", "text": "WASD or the ARROW KEYS to move.",
+		"goal": "move", "need": 1},
+	{"title": "AIM", "text": "Your MOUSE aims every attack - the cat strikes wherever the cursor is, not where she is facing. Wave it around.",
+		"goal": "aim", "need": 1},
+	{"title": "PAW", "text": "LEFT CLICK to swipe. Fast and cheap - your bread and butter. Aim at the rat and hit it.",
+		"goal": "paw_hit", "need": 4, "dummies": 1},
+	{"title": "DASH", "text": "SPACE to dash. You are briefly untouchable mid-dash - it is your dodge. Try two.",
+		"goal": "dash", "need": 2},
+	{"title": "JAW", "text": "RIGHT CLICK (a quick tap) to bite. It roots you for a beat, so pick your moment - but it hurts, and it makes them bleed.",
+		"goal": "bite", "need": 2, "dummies": 1},
+	{"title": "TAIL", "text": "HOLD RIGHT CLICK to sweep your tail. Barely any damage - it is for flinging a crowd off you when you get swarmed.",
+		"goal": "tail", "need": 2, "dummies": 2},
+	{"title": "LEER", "text": "Press E to LEER. It stuns everything in front of you and MARKS it. Free to use - never hold it back.",
+		"goal": "glare", "need": 1, "dummies": 2},
+	{"title": "EXECUTE", "text": "Marked prey has a red chevron. Kill a marked foe for a bonus EXECUTE. Leer them, then finish them.",
+		"goal": "execute", "need": 1, "dummies": 3},
+	{"title": "PARRY", "text": "Enemies flash their tell before striking. When it turns WHITE, DASH INTO them to freeze them cold.",
+		"goal": "parry", "need": 1, "armed": 1},
+]
+
+var tutorial_active: bool = false
+var tut_progress: int = 0
+var tut_dummies: Array = []
+var tut_move_origin: Vector2 = Vector2.ZERO
+var tut_mouse_origin: Vector2 = Vector2.ZERO
+var tut_ready_timer: float = 0.0
+var tutorial_title: Label
+var tutorial_progress: Label
+
 func _build_tutorial_panel() -> void:
+	# Non-blocking coach card pinned under the top HUD: the fight keeps running
+	# underneath so the player can practise while reading.
 	tutorial_panel = Control.new()
 	tutorial_panel.name = "TutorialPanel"
 	tutorial_panel.visible = false
-	tutorial_panel.process_mode = Node.PROCESS_MODE_ALWAYS
-	tutorial_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
-	var dim := ColorRect.new()
-	dim.color = Color(0.0, 0.0, 0.0, 0.72)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	tutorial_panel.add_child(dim)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	tutorial_panel.add_child(center)
-	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(218, 100)
-	box.add_theme_constant_override("separation", 2)
-	center.add_child(box)
+	tutorial_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tutorial_panel.position = Vector2(18, 17)
+	tutorial_panel.size = Vector2(220, 44)
+	var card := Panel.new()
+	card.set_anchors_preset(Control.PRESET_FULL_RECT)
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_theme_stylebox_override("panel", _panel_box(
+		Color(0.05, 0.07, 0.12, 0.92), Color(1.0, 0.84, 0.35, 0.9)))
+	tutorial_panel.add_child(card)
+	tutorial_title = Label.new()
+	tutorial_title.position = Vector2(6, 2)
+	tutorial_title.size = Vector2(150, 10)
+	tutorial_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tutorial_title.add_theme_font_size_override("font_size", 8)
+	tutorial_title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.35, 1.0))
+	tutorial_title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	tutorial_title.add_theme_constant_override("outline_size", 3)
+	tutorial_panel.add_child(tutorial_title)
+	tutorial_progress = Label.new()
+	tutorial_progress.position = Vector2(160, 2)
+	tutorial_progress.size = Vector2(54, 10)
+	tutorial_progress.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tutorial_progress.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	tutorial_progress.add_theme_font_size_override("font_size", 8)
+	tutorial_progress.add_theme_color_override("font_color", Color(0.5, 1.0, 0.86, 1.0))
+	tutorial_progress.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	tutorial_progress.add_theme_constant_override("outline_size", 3)
+	tutorial_panel.add_child(tutorial_progress)
 	tutorial_text = Label.new()
+	tutorial_text.position = Vector2(6, 12)
+	tutorial_text.size = Vector2(208, 30)
+	tutorial_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tutorial_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	tutorial_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tutorial_text.custom_minimum_size = Vector2(218, 62)
-	tutorial_text.add_theme_font_size_override("font_size", 9)
-	tutorial_text.add_theme_color_override("font_color", Color(1.0, 0.93, 0.7, 1.0))
-	box.add_child(tutorial_text)
-	tutorial_button = _make_button("NEXT")
-	tutorial_button.pressed.connect(_advance_tutorial)
-	box.add_child(tutorial_button)
+	tutorial_text.add_theme_font_size_override("font_size", 7)
+	tutorial_text.add_theme_color_override("font_color", Color(0.95, 0.94, 0.86, 1.0))
+	tutorial_text.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	tutorial_text.add_theme_constant_override("outline_size", 2)
+	tutorial_panel.add_child(tutorial_text)
 	$UI.add_child(tutorial_panel)
 
-func _show_tutorial_step() -> void:
-	var steps := [
-		"Time stop. Move with WASD or arrows, aim with the mouse. LEFT CLICK = quick paw swipes.",
-		"RIGHT CLICK = heavy JAW. It roots you for a beat (you're open!), but deletes small foes and makes them bleed.",
-		"HOLD RIGHT CLICK for a TAIL sweep. It flings enemies away when you get swarmed.",
-		"Press E to LEER: stuns and MARKS a pack. Hit a marked foe to EXECUTE it for bonus style.",
-		"DASH (Space) INTO an enemy's attack tell to FREEZE it. Perfect parry. Spend coins between waves. Go hunt.",
-	]
-	tutorial_step = clampi(tutorial_step, 0, steps.size() - 1)
-	tutorial_text.text = steps[tutorial_step]
-	tutorial_button.text = "FIGHT" if tutorial_step == steps.size() - 1 else "NEXT"
-	tutorial_panel.visible = true
-	get_tree().paused = true
+func _start_tutorial() -> void:
+	tutorial_active = true
+	tutorial_step = 0
+	_play_music(WAVE_MUSIC)
+	_begin_tutorial_step()
 
-func _advance_tutorial() -> void:
-	tutorial_step += 1
-	if tutorial_step >= 5:
-		tutorial_panel.visible = false
-		get_tree().paused = false
+func _begin_tutorial_step() -> void:
+	if tutorial_step >= TUTORIAL_STEPS.size():
+		_finish_tutorial()
 		return
-	_show_tutorial_step()
+	var step: Dictionary = TUTORIAL_STEPS[tutorial_step]
+	tut_progress = 0
+	tut_ready_timer = 0.35
+	tutorial_title.text = String(step["title"])
+	tutorial_text.text = String(step["text"])
+	tutorial_panel.visible = true
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat != null and is_instance_valid(cat):
+		tut_move_origin = cat.global_position
+	tut_mouse_origin = get_viewport().get_mouse_position()
+	_update_tutorial_progress()
+	_ensure_tut_dummies(int(step.get("dummies", 0)), int(step.get("armed", 0)))
+
+func _update_tutorial_progress() -> void:
+	if not tutorial_active or tutorial_step >= TUTORIAL_STEPS.size():
+		return
+	var need := int(TUTORIAL_STEPS[tutorial_step].get("need", 1))
+	tutorial_progress.text = "%d/%d" % [mini(tut_progress, need), need] if need > 1 else ""
+
+# Practice fodder: enough health to survive the lesson, and (except for the
+# parry step) completely harmless, so nobody dies learning the controls.
+func _ensure_tut_dummies(count: int, armed: int) -> void:
+	_clear_tut_dummies()
+	for i in count:
+		_spawn_tut_dummy(false)
+	for i in armed:
+		_spawn_tut_dummy(true)
+
+func _spawn_tut_dummy(armed: bool) -> void:
+	if rat_scene == null:
+		return
+	var cfg := {
+		"max_health": 3 if armed else 6,
+		"move_speed": 52.0 if armed else 30.0,
+		"nibble_damage": 0, "dash_damage": 0,
+		"score_value": 0,
+		"tint": Color(1.0, 0.85, 0.5) if armed else Color(0.8, 0.9, 1.0),
+		"body_scale": 0.72,
+	}
+	if armed:
+		# Wants to lunge often so the white parry flash comes around quickly.
+		cfg["dash_chance"] = 1.0
+		cfg["dash_cooldown_min"] = 1.1
+		cfg["dash_cooldown_max"] = 1.7
+		cfg["dash_windup"] = 0.6
+		cfg["nibble_interval"] = 1.4
+	else:
+		cfg["dash_chance"] = 0.0
+		cfg["nibble_interval"] = 3.0
+	var e := rat_scene.instantiate()
+	if e.has_method("configure"):
+		e.configure(cfg)
+	e.position = _spawn_point()
+	add_child(e)
+	tut_dummies.append(e)
+	if e.has_signal("died"):
+		e.died.connect(_on_tut_dummy_died.bind(e))
+
+func _on_tut_dummy_died(dummy: Node) -> void:
+	tut_dummies.erase(dummy)
+	# Killing the practice dummy should never soft-lock the lesson.
+	if not tutorial_active or tutorial_step >= TUTORIAL_STEPS.size():
+		return
+	var step: Dictionary = TUTORIAL_STEPS[tutorial_step]
+	var wanted := int(step.get("dummies", 0)) + int(step.get("armed", 0))
+	if wanted > 0 and _live_tut_dummies() < wanted:
+		_spawn_tut_dummy(int(step.get("armed", 0)) > 0)
+
+func _live_tut_dummies() -> int:
+	var n := 0
+	for d in tut_dummies:
+		if is_instance_valid(d) and not bool(d.get("dead")):
+			n += 1
+	return n
+
+func _clear_tut_dummies() -> void:
+	for d in tut_dummies:
+		if is_instance_valid(d):
+			d.queue_free()
+	tut_dummies.clear()
+
+# Counts a completed rep. Called from _on_style_event for everything the cat
+# already reports, and from _process for the polled move/aim steps.
+func _tutorial_credit(kind: String) -> void:
+	if not tutorial_active or tutorial_step >= TUTORIAL_STEPS.size():
+		return
+	if tut_ready_timer > 0.0:
+		return
+	var step: Dictionary = TUTORIAL_STEPS[tutorial_step]
+	if String(step["goal"]) != kind:
+		return
+	tut_progress += 1
+	_update_tutorial_progress()
+	if tut_progress < int(step.get("need", 1)):
+		_flash(Color(0.6, 1.0, 0.8), 0.1)
+		return
+	_hype("NICE!", Color(0.5, 1.0, 0.7))
+	_flash(Color(0.6, 1.0, 0.8), 0.28)
+	tutorial_step += 1
+	await get_tree().create_timer(0.85, false).timeout
+	if tutorial_active:
+		_begin_tutorial_step()
+
+func _tick_tutorial(delta: float) -> void:
+	if not tutorial_active or tutorial_step >= TUTORIAL_STEPS.size():
+		return
+	tut_ready_timer = maxf(tut_ready_timer - delta, 0.0)
+	var goal := String(TUTORIAL_STEPS[tutorial_step]["goal"])
+	if goal == "move":
+		var cat := get_tree().get_first_node_in_group("player")
+		if cat != null and is_instance_valid(cat):
+			if cat.global_position.distance_to(tut_move_origin) > 34.0:
+				_tutorial_credit("move")
+	elif goal == "aim":
+		if get_viewport().get_mouse_position().distance_to(tut_mouse_origin) > 60.0:
+			_tutorial_credit("aim")
+
+func _finish_tutorial() -> void:
+	tutorial_active = false
+	tutorial_panel.visible = false
+	_clear_tut_dummies()
+	_hype("GO HUNT!", Color(1.0, 0.84, 0.35))
+	_set_reward("That's the whole kit. Now use it.")
+	_build_waves()
+	_next_wave()
 
 func _load_profile() -> void:
 	var config := ConfigFile.new()
@@ -1477,15 +1862,21 @@ func _load_profile() -> void:
 		best_record = int(config.get_value("records", "best_score", 0))
 		coins = int(config.get_value("shop", "coins", 0))
 		glare_level = int(config.get_value("shop", "glare_level", 1))
+		difficulty = int(config.get_value("options", "difficulty", 1))
 	glare_level = clampi(glare_level, 1, 3)
+	difficulty = clampi(difficulty, 0, DIFFICULTIES.size() - 1)
 
 func _bank_run() -> void:
 	if profile_saved:
 		return
 	profile_saved = true
-	var combo_bonus: int = mini(best_chain * 2, 50)
-	var clear_bonus: int = 50 if cleared else 0
-	last_earned = maxi(0, int(score * 0.12) + int(style_meter * _rank_coin_multiplier() * 0.25) + combo_bonus + clear_bonus)
+	# Payout is deliberately thin. Coins persist between runs, so a generous rate
+	# compounds into "buy everything on run two" within an evening. A strong clear
+	# should fund roughly one meaningful upgrade, not the whole shop.
+	var combo_bonus: int = mini(best_chain, 25)
+	var clear_bonus: int = 30 if cleared else 0
+	var raw: float = float(score) * 0.035 + style_meter * _rank_coin_multiplier() * 0.11 + float(combo_bonus + clear_bonus)
+	last_earned = maxi(0, int(raw * float(_diff()["coin"])))
 	coins += last_earned
 	best_record = max(best_record, score)
 	_save_profile_values()
@@ -1501,4 +1892,5 @@ func _save_profile_values() -> void:
 	config.set_value("shop", "last_style", int(style_meter))
 	config.set_value("shop", "last_earned", last_earned)
 	config.set_value("shop", "last_rank", _style_rank())
+	config.set_value("options", "difficulty", difficulty)
 	config.save("user://macatre_profile.cfg")
