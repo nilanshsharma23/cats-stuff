@@ -12,6 +12,8 @@ signal died
 @export var aoe_damage: int = 1
 @export var aoe_radius: float = 56.0
 @export var score_value: int = 760
+@export var summon_cooldown: float = 5.8
+@export var max_minions: int = 3
 
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var aoe: CPUParticles2D = $Aoe
@@ -19,6 +21,7 @@ signal died
 
 const ARENA_MIN := Vector2(28, 24)
 const ARENA_MAX := Vector2(228, 120)
+const FROG_SCENE: PackedScene = preload("res://scenes/frog.tscn")
 
 var boss_name: String = "THE BOG BARON"
 var player: Node2D = null
@@ -30,6 +33,7 @@ var attack_kind: String = ""
 var attack_timer: float = 0.0
 var attack_duration: float = 1.0
 var attack_index: int = 0
+var summon_cd: float = 2.8
 var hop_start: Vector2 = Vector2.ZERO
 var hop_target: Vector2 = Vector2.ZERO
 var stun_timer: float = 0.0
@@ -146,6 +150,7 @@ func _tick_common(delta: float) -> void:
 	hurt_timer = max(hurt_timer - delta, 0.0)
 	parry_window = max(parry_window - delta, 0.0)
 	marked_timer = max(marked_timer - delta, 0.0)
+	summon_cd = max(summon_cd - delta, 0.0)
 	_tick_bleed(delta)
 
 func _tick_bleed(delta: float) -> void:
@@ -179,7 +184,9 @@ func _chase(_delta: float) -> void:
 	global_position = _arena_clamp(global_position)
 
 func _begin_next_attack() -> void:
-	if attack_index % 2 == 0:
+	if summon_cd <= 0.0 and _summoned_count() < max_minions:
+		_begin_summon_attack()
+	elif attack_index % 2 == 0:
 		_begin_hop_attack()
 	else:
 		_begin_aoe_attack()
@@ -202,6 +209,13 @@ func _begin_aoe_attack() -> void:
 	parry_window = attack_duration
 	_play("croak_" + _facing())
 
+func _begin_summon_attack() -> void:
+	attack_kind = "summon_windup"
+	attack_duration = 0.72
+	attack_timer = attack_duration
+	parry_window = attack_duration
+	_play("croak_" + _facing())
+
 func _update_attack(delta: float) -> void:
 	attack_timer -= delta
 	if attack_kind == "hop_windup":
@@ -219,6 +233,12 @@ func _update_attack(delta: float) -> void:
 			anim.position = Vector2.ZERO
 			_land_hop()
 		return
+	if attack_kind == "summon_windup":
+		velocity = Vector2.ZERO
+		move_and_slide()
+		if attack_timer <= 0.0:
+			_release_summon()
+		return
 	if attack_kind == "aoe_windup":
 		velocity = Vector2.ZERO
 		move_and_slide()
@@ -227,6 +247,45 @@ func _update_attack(delta: float) -> void:
 		return
 	if attack_kind == "recover" and attack_timer <= 0.0:
 		_end_attack()
+
+func _release_summon() -> void:
+	parry_window = 0.0
+	_spawn_minion()
+	summon_cd = summon_cooldown
+	attack_kind = "recover"
+	attack_duration = 0.32
+	attack_timer = attack_duration
+
+func _summoned_count() -> int:
+	var count: int = 0
+	for f in get_tree().get_nodes_in_group("frog_boss_minion"):
+		if is_instance_valid(f):
+			count += 1
+	return count
+
+func _spawn_minion() -> void:
+	if get_parent() == null or _summoned_count() >= max_minions:
+		return
+	var minion: Node2D = FROG_SCENE.instantiate() as Node2D
+	if minion == null:
+		return
+	if minion.has_method("configure"):
+		minion.configure({"max_health": 2, "move_speed": 74.0, "aoe_damage": 1, "croak_cooldown": 2.0, "body_scale": 0.58, "tint": Color(0.72, 1.0, 0.58, 1.0), "score_value": 12})
+	minion.add_to_group("frog_boss_minion")
+	minion.global_position = _summon_point()
+	get_parent().add_child(minion)
+	if minion.has_signal("died") and get_parent().has_method("_on_enemy_died"):
+		minion.connect("died", Callable(get_parent(), "_on_enemy_died").bind(minion), CONNECT_ONE_SHOT)
+
+func _summon_point() -> Vector2:
+	var angle: float = randf() * TAU
+	for i in 8:
+		var dir: Vector2 = Vector2(cos(angle), sin(angle))
+		var p: Vector2 = _arena_clamp(global_position + dir * randf_range(24.0, 42.0))
+		if player == null or p.distance_to(player.global_position) > 28.0:
+			return p
+		angle += PI * 0.35
+	return _arena_clamp(global_position + Vector2.RIGHT * 32.0)
 
 func _release_hop() -> void:
 	parry_window = 0.0
@@ -340,6 +399,8 @@ func _draw() -> void:
 		_draw_hop_tell()
 	if attack_kind == "aoe_windup" or attack_kind == "recover":
 		_draw_aoe_tell()
+	if attack_kind == "summon_windup":
+		_draw_summon_tell()
 	if frozen and stun_timer > 0.0:
 		_draw_frost()
 	if is_marked():
@@ -353,6 +414,11 @@ func _draw_hop_tell() -> void:
 	draw_arc(target, hop_radius, 0.0, TAU, 36, Color(1.0, 0.28, 0.2, 0.62), 1.6, true)
 	draw_circle(target, hop_radius * (0.18 + 0.12 * sin(t * TAU)), Color(0.55, 1.0, 0.48, 0.35))
 	draw_line(Vector2.ZERO, target, Color(0.55, 1.0, 0.48, 0.28), 1.0)
+
+func _draw_summon_tell() -> void:
+	var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.014)
+	draw_arc(Vector2.ZERO, 30.0 + pulse * 5.0, 0.0, TAU, 34, Color(0.45, 1.0, 0.34, 0.45), 1.3, true)
+	draw_arc(Vector2.ZERO, 18.0, 0.0, TAU, 24, Color(0.85, 1.0, 0.4, 0.35), 1.0, true)
 
 func _draw_aoe_tell() -> void:
 	var t: float = 1.0 - clampf(attack_timer / maxf(attack_duration, 0.01), 0.0, 1.0)

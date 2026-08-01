@@ -3,7 +3,7 @@ extends CharacterBody2D
 signal died
 signal style_event(kind: String, amount: int)
 
-@export var speed: int = 118
+@export var speed: int = 112
 @export var max_health: int = 10
 @export var dash_speed: float = 300.0
 @export var dash_duration: float = 0.16
@@ -21,7 +21,8 @@ signal style_event(kind: String, amount: int)
 @export var bite_damage: int = 3
 @export var bite_range: float = 40.0
 @export var bite_arc: float = -0.1
-@export var bite_lock: float = 0.95
+@export var bite_lock: float = 0.72
+@export var bite_cooldown: float = 1.45
 @export var bite_knockback: float = 120.0
 @export var bite_bleed_dur: float = 5.0
 @export var bite_bleed_dps: float = 1.5
@@ -38,8 +39,8 @@ signal style_event(kind: String, amount: int)
 @export var leer_range: float = 92.0
 @export var leer_arc: float = 0.35
 @export var leer_stun: float = 0.35
-@export var leer_cooldown: float = 1.1
-@export var leer_show: float = 0.4
+@export var leer_cooldown: float = 5.8
+@export var leer_show: float = 0.5
 
 @export var invuln_time: float = 0.55
 
@@ -56,6 +57,7 @@ var dash_time_left: float = 0.0
 var dash_cd_left: float = 0.0
 var dash_direction: Vector2 = Vector2.DOWN
 var paw_cd: float = 0.0
+var bite_cd_left: float = 0.0
 var leer_cd: float = 0.0
 var tail_cd: float = 0.0
 var invuln_timer: float = 0.0
@@ -67,6 +69,7 @@ var mark_duration: float = 5.0
 var glare_level: int = 1
 var external_knockback: Vector2 = Vector2.ZERO
 var external_knockback_timer: float = 0.0
+var glare_tween: Tween
 
 func _ready() -> void:
 	add_to_group("player")
@@ -86,6 +89,7 @@ func _physics_process(delta: float) -> void:
 
 	dash_cd_left = max(dash_cd_left - delta, 0.0)
 	paw_cd = max(paw_cd - delta, 0.0)
+	bite_cd_left = max(bite_cd_left - delta, 0.0)
 	leer_cd = max(leer_cd - delta, 0.0)
 	tail_cd = max(tail_cd - delta, 0.0)
 	invuln_timer = max(invuln_timer - delta, 0.0)
@@ -128,7 +132,7 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_released("bite"):
 		var was_tap := rmb_down and not rmb_consumed
 		rmb_down = false
-		if was_tap:
+		if was_tap and bite_cd_left <= 0.0:
 			_bite()
 			return
 
@@ -216,6 +220,7 @@ func _paw() -> void:
 # inflicts bleeding - a big commitment that clears tough foes.
 func _bite() -> void:
 	bite_lock_timer = bite_lock
+	bite_cd_left = bite_cooldown
 	var aim := _aim()
 	last_direction = aim
 	invuln_timer = 0.0
@@ -272,10 +277,15 @@ func _leer() -> void:
 	last_direction = aim
 	glare_eyes.position = aim * 14.0
 	glare_eyes.rotation = aim.angle()
+	glare_eyes.scale = Vector2(0.35, 0.35)
+	glare_eyes.modulate = Color(1.0, 1.0, 1.0, 1.0)
 	glare_eyes.visible = true
-	var t := create_tween()
-	t.tween_interval(leer_show)
-	t.tween_callback(func(): glare_eyes.visible = false)
+	if glare_tween != null and glare_tween.is_valid():
+		glare_tween.kill()
+	glare_tween = create_tween()
+	glare_tween.tween_property(glare_eyes, "scale", Vector2(1.05, 1.05), leer_show * 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	glare_tween.parallel().tween_property(glare_eyes, "modulate:a", 0.35, leer_show)
+	glare_tween.tween_callback(func(): glare_eyes.visible = false)
 	style_event.emit("glare", -4)
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e):
@@ -335,7 +345,7 @@ func die() -> void:
 # --- Between-wave roguelite upgrades (applied by the level's break shop) ---
 
 func buy_health() -> void:
-	max_health += 2
+	max_health += 1
 	health = mini(health + 2, max_health)
 	health_bar.max_value = max_health
 	health_bar.value = health
@@ -349,7 +359,7 @@ func upgrade_leer() -> void:
 	leer_stun += 0.15
 	mark_duration += 1.0
 	leer_range += 8.0
-	leer_cooldown = maxf(leer_cooldown - 0.12, 0.4)
+	leer_cooldown = maxf(leer_cooldown - 0.45, 4.4)
 
 func _load_profile() -> void:
 	var config := ConfigFile.new()

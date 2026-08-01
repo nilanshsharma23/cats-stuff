@@ -56,7 +56,7 @@ func _toggle_shop() -> void:
 		$Center/Box/Play.grab_focus()
 
 func _upgrade_glare() -> void:
-	var costs := [0, 60, 140]
+	var costs := [0, 90, 220]
 	if glare_level >= 3:
 		_refresh_shop("Glare is already maxed.")
 		return
@@ -209,7 +209,7 @@ func _make_button(text: String) -> Button:
 
 func _refresh_shop(message: String = "") -> void:
 	var stuns := [0.35, 0.6, 0.85]
-	var costs := [0, 60, 140]
+	var costs := [0, 90, 220]
 	var text := "SHOP\nCoins: %d   Best: %d\nGlare L%d: %.2fs paralyze" % [coins, best_score, glare_level, stuns[glare_level - 1]]
 	if glare_level < 3:
 		text += "\nNext: %.2fs for %d coins" % [stuns[glare_level], costs[glare_level]]

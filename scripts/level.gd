@@ -18,51 +18,51 @@ const UI_FONT: FontFile = preload("res://fonts/Pixellari.ttf")
 var ROSTER := {
 	"rat": {
 		"scene": "rat",
-		"cfg": {"max_health": 3, "move_speed": 120.0, "nibble_damage": 1,
-			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 12}
+		"cfg": {"max_health": 3, "move_speed": 108.0, "nibble_damage": 1,
+			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 16}
 	},
 	"scurrier": {
 		"scene": "rat",
-		"cfg": {"max_health": 2, "move_speed": 176.0, "nibble_damage": 1,
-			"dash_chance": 0.82, "dash_cooldown_min": 0.7, "dash_cooldown_max": 1.4,
-			"tint": Color(0.72, 1.0, 0.55), "body_scale": 0.6, "score_value": 10}
+		"cfg": {"max_health": 2, "move_speed": 146.0, "nibble_damage": 1,
+			"dash_chance": 0.72, "dash_cooldown_min": 1.0, "dash_cooldown_max": 1.8,
+			"tint": Color(0.72, 1.0, 0.55), "body_scale": 0.6, "score_value": 14}
 	},
 	"brute": {
 		"scene": "rat",
-		"cfg": {"max_health": 6, "move_speed": 74.0, "nibble_damage": 1,
+		"cfg": {"max_health": 6, "move_speed": 66.0, "nibble_damage": 1,
 			"nibble_range": 22.0, "dash_chance": 0.25, "knockback_resist": 0.6,
-			"tint": Color(1.0, 0.5, 0.42), "body_scale": 1.08, "score_value": 32}
+			"tint": Color(1.0, 0.5, 0.42), "body_scale": 1.08, "score_value": 42}
 	},
 	"frog": {
 		"scene": "frog",
-		"cfg": {"max_health": 3, "move_speed": 88.0, "aoe_damage": 1,
-			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 18}
+		"cfg": {"max_health": 3, "move_speed": 76.0, "aoe_damage": 1,
+			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 24}
 	},
 	"spitter": {
 		"scene": "frog",
-		"cfg": {"max_health": 3, "move_speed": 104.0, "croak_cooldown": 1.2,
-			"croak_range": 56.0, "aoe_radius": 34.0, "croak_windup": 0.42,
-			"tint": Color(0.5, 0.82, 1.0), "body_scale": 0.7, "score_value": 22}
+		"cfg": {"max_health": 3, "move_speed": 88.0, "croak_cooldown": 1.55,
+			"croak_range": 54.0, "aoe_radius": 32.0, "croak_windup": 0.5,
+			"tint": Color(0.5, 0.82, 1.0), "body_scale": 0.7, "score_value": 30}
 	},
 	"boss": {
 		"scene": "rat",
-		"cfg": {"is_boss": true, "max_health": 50, "move_speed": 96.0,
+		"cfg": {"is_boss": true, "max_health": 50, "move_speed": 84.0,
 			"nibble_damage": 2, "nibble_range": 30.0, "nibble_interval": 0.55,
-			"dash_chance": 0.9, "dash_windup": 0.5, "dash_speed": 300.0,
+			"dash_chance": 0.82, "dash_windup": 0.6, "dash_speed": 260.0,
 			"dash_cooldown_min": 1.0, "dash_cooldown_max": 1.8,
 			"knockback_resist": 0.9, "tint": Color(0.85, 0.4, 1.0),
 			"body_scale": 2.3, "score_value": 600}
 	},
 	"frog_boss": {
 		"scene": "frog_boss",
-		"cfg": {"is_boss": true, "max_health": 62, "move_speed": 58.0,
+		"cfg": {"is_boss": true, "max_health": 66, "move_speed": 54.0,
 			"hop_damage": 2, "hop_knockback": 360.0, "hop_radius": 24.0,
 			"aoe_damage": 1, "aoe_radius": 56.0, "tint": Color(0.56, 1.0, 0.5, 1.0),
 			"body_scale": 1.65, "score_value": 760}
 	},
 	"pigeon_boss": {
 		"scene": "pigeon_boss",
-		"cfg": {"is_boss": true, "max_health": 76, "move_speed": 62.0,
+		"cfg": {"is_boss": true, "max_health": 76, "move_speed": 56.0,
 			"circle_radius": 34.0, "cross_width": 12.0, "circle_damage": 1,
 			"cross_damage": 1, "tint": Color(1.0, 1.0, 1.0, 1.0),
 			"body_scale": 0.14, "score_value": 900}
@@ -114,6 +114,8 @@ var boss_panel: Control
 var boss_name_label: Label
 var boss_fill: ColorRect
 var boss_bar_width: float = 160.0
+var ability_panel: VBoxContainer
+var ability_slots: Dictionary = {}
 
 # Between-wave break shop
 var break_panel: Control
@@ -154,6 +156,7 @@ func _ready() -> void:
 	_setup_camera()
 	_build_result_panel()
 	_build_hud()
+	_build_ability_bar()
 	_build_flash()
 	_build_boss_bar()
 	_build_shop_panel()
@@ -183,6 +186,7 @@ func _process(delta: float) -> void:
 		reward_label.modulate.a = 0.0
 	_update_shake(delta)
 	_update_boss_bar()
+	_update_ability_bar()
 	_refresh_hud()
 
 # --- Game feel helpers -------------------------------------------------------
@@ -259,7 +263,7 @@ func _spawn_popup(pos: Vector2, text: String) -> void:
 	t.tween_callback(l.queue_free)
 
 func _hide_hud() -> void:
-	for n in [wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel]:
+	for n in [wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel, ability_panel]:
 		if n != null:
 			n.visible = false
 	var cat := get_tree().get_first_node_in_group("player")
@@ -271,7 +275,7 @@ func _multikill(n: int) -> void:
 	_hype(names.get(n, "MASSACRE"), Color(1.0, 0.72, 0.2))
 	_flash(Color(1.0, 0.85, 0.45), 0.32 + 0.05 * n)
 	_shake(2.2 + n * 0.4)
-	score += n * 8
+	score += n * 14
 
 func _check_combo_milestone() -> void:
 	var tiers := {10: "COMBO x10", 20: "RAMPAGE", 30: "UNSTOPPABLE", 40: "GODLIKE", 50: "LEGENDARY"}
@@ -291,30 +295,30 @@ func _build_waves() -> void:
 			]
 		else:
 			waves = [
-				[["rat", 6]],
-				[["rat", 6], ["scurrier", 5]],
-				[["rat", 5], ["scurrier", 6], ["frog", 2]],
+				[["rat", 5]],
+				[["rat", 5], ["scurrier", 4]],
+				[["rat", 4], ["scurrier", 4], ["frog", 2]],
 			]
 	elif level_id == 2:
 		waves = [
-			[["scurrier", 10], ["frog", 3]],
-			[["rat", 8], ["brute", 1], ["frog", 3]],
-			[["scurrier", 10], ["spitter", 4]],
-			[["rat", 8], ["brute", 2], ["spitter", 3]],
-			[["scurrier", 12], ["brute", 2], ["frog", 4]],
-			[["boss", 1], ["scurrier", 5]],
+			[["scurrier", 8], ["frog", 3]],
+			[["rat", 7], ["brute", 1], ["frog", 3]],
+			[["scurrier", 8], ["spitter", 4]],
+			[["rat", 7], ["brute", 2], ["spitter", 3]],
+			[["scurrier", 9], ["brute", 2], ["frog", 4]],
+			[["boss", 1], ["scurrier", 4]],
 		]
 	elif level_id == 3:
 		waves = [
-			[["spitter", 5], ["brute", 2], ["scurrier", 4]],
-			[["scurrier", 12], ["spitter", 5], ["frog", 3]],
-			[["frog_boss", 1], ["rat", 7], ["scurrier", 3]],
+			[["spitter", 4], ["brute", 2], ["scurrier", 4]],
+			[["scurrier", 9], ["spitter", 5], ["frog", 3]],
+			[["frog_boss", 1], ["rat", 5], ["scurrier", 2]],
 		]
 	else:
 		waves = [
-			[["rat", 10], ["brute", 3], ["spitter", 4]],
-			[["scurrier", 12], ["spitter", 5], ["frog", 4]],
-			[["pigeon_boss", 1], ["scurrier", 6]],
+			[["rat", 8], ["brute", 3], ["spitter", 4]],
+			[["scurrier", 9], ["spitter", 5], ["frog", 4]],
+			[["pigeon_boss", 1], ["scurrier", 4]],
 		]
 
 func _is_boss_wave(index: int) -> bool:
@@ -421,7 +425,9 @@ func _on_enemy_died(enemy: Node) -> void:
 	score += gained
 	if enemy != null and is_instance_valid(enemy):
 		_spawn_popup(enemy.global_position, "+%d" % gained)
-	_on_style_event("enemy_down", 14)
+	_flash(Color(1.0, 0.82, 0.35), 0.16)
+	_shake(1.2)
+	_on_style_event("enemy_down", 18)
 	if not cleared and not boss_active and _live_enemy_count() == 0:
 		_award_wave_clear()
 		call_deferred("_finish_wave_after_delay")
@@ -475,13 +481,13 @@ func _wave_enemy_count(index: int) -> int:
 	return total
 
 func _hp_cost() -> int:
-	return 40 + hp_buys * 30
+	return 24 + hp_buys * 18
 
 func _dash_cost() -> int:
-	return 55 + dash_buys * 40
+	return 72 + dash_buys * 55
 
 func _leer_cost() -> int:
-	return 50 + leer_buys * 40
+	return 95 + leer_buys * 75
 
 func _start_break() -> void:
 	if cleared:
@@ -498,7 +504,7 @@ func _start_break() -> void:
 
 func _refresh_break() -> void:
 	break_coins.text = "Coins: %d" % coins
-	hp_button.text = "+2 MAX HP  (%d)" % _hp_cost()
+	hp_button.text = "+1 MAX HP  (%d)" % _hp_cost()
 	dash_button.text = "DASH+ faster/longer/often  (%d)" % _dash_cost()
 	leer_button.text = "LEER+ stun/mark  (%d)" % _leer_cost()
 
@@ -675,7 +681,7 @@ func _on_style_event(kind: String, amount: int) -> void:
 		return
 	if kind == "paw_hit" or kind == "paw_kill" or kind == "enemy_down" or kind == "parry" or kind == "execute":
 		no_glare_chain += 1
-	var multiplier: float = 1.0 + mini(no_glare_chain, 24) * 0.06
+	var multiplier: float = 1.0 + mini(no_glare_chain, 28) * 0.075
 	style_meter += amount * multiplier
 	style_timeout = 3.5
 	if kind == "paw_hit":
@@ -761,6 +767,73 @@ func _build_hud() -> void:
 	reward_label.modulate.a = 0.0
 	_refresh_hud()
 
+func _build_ability_bar() -> void:
+	ability_slots.clear()
+	ability_panel = VBoxContainer.new()
+	ability_panel.name = "AbilityBar"
+	ability_panel.position = Vector2(7, 44)
+	ability_panel.add_theme_constant_override("separation", 2)
+	$UI.add_child(ability_panel)
+	_add_ability_slot("PAW", "LMB", Color(0.48, 1.0, 0.66, 0.95))
+	_add_ability_slot("DASH", "SPC", Color(0.62, 0.9, 1.0, 0.95))
+	_add_ability_slot("BITE", "RMB", Color(1.0, 0.45, 0.34, 0.95))
+	_add_ability_slot("TAIL", "HOLD", Color(0.5, 0.78, 1.0, 0.95))
+	_add_ability_slot("GLARE", "E", Color(1.0, 0.28, 0.45, 0.95))
+
+func _add_ability_slot(key: String, hint: String, color: Color) -> void:
+	var root := Control.new()
+	root.custom_minimum_size = Vector2(54, 14)
+	var bg := ColorRect.new()
+	bg.size = Vector2(54, 14)
+	bg.color = Color(0.06, 0.055, 0.075, 0.86)
+	root.add_child(bg)
+	var fill := ColorRect.new()
+	fill.size = Vector2(54, 14)
+	fill.color = color
+	root.add_child(fill)
+	var label := Label.new()
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_override("font", UI_FONT)
+	label.add_theme_font_size_override("font_size", 7)
+	label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	label.add_theme_constant_override("outline_size", 2)
+	label.text = "%s %s" % [key, hint]
+	root.add_child(label)
+	ability_panel.add_child(root)
+	ability_slots[key] = {"fill": fill, "label": label, "color": color, "hint": hint}
+
+func _update_ability_bar() -> void:
+	if ability_panel == null:
+		return
+	var cat: Node = get_tree().get_first_node_in_group("player")
+	if cat == null or not is_instance_valid(cat):
+		ability_panel.visible = false
+		return
+	ability_panel.visible = true
+	_set_ability_slot("PAW", float(cat.get("paw_cd")), float(cat.get("paw_cooldown")))
+	_set_ability_slot("DASH", float(cat.get("dash_cd_left")), float(cat.get("dash_cooldown")))
+	var bite_cd: float = maxf(float(cat.get("bite_cd_left")), float(cat.get("bite_lock_timer")))
+	var bite_max: float = maxf(float(cat.get("bite_cooldown")), float(cat.get("bite_lock")))
+	_set_ability_slot("BITE", bite_cd, bite_max)
+	_set_ability_slot("TAIL", float(cat.get("tail_cd")), float(cat.get("tail_cooldown")))
+	_set_ability_slot("GLARE", float(cat.get("leer_cd")), float(cat.get("leer_cooldown")))
+
+func _set_ability_slot(key: String, cd: float, max_cd: float) -> void:
+	if not ability_slots.has(key):
+		return
+	var slot: Dictionary = ability_slots[key]
+	var fill: ColorRect = slot["fill"]
+	var label: Label = slot["label"]
+	var width: float = 54.0
+	var ready: bool = cd <= 0.05
+	var fill_ratio: float = 1.0 if ready else 1.0 - clampf(cd / maxf(max_cd, 0.01), 0.0, 1.0)
+	fill.size = Vector2(width * fill_ratio, 14.0)
+	fill.color = slot["color"] if ready else Color(0.18, 0.17, 0.2, 0.95)
+	label.text = "%s %s" % [key, String(slot["hint"])] if ready else "%s %.1f" % [key, cd]
+
 func _hud_label(pos: Vector2, box: Vector2, color: Color, font_size: int, align: int) -> Label:
 	var label := Label.new()
 	label.position = pos
@@ -815,7 +888,7 @@ func _set_reward(text: String) -> void:
 	if reward_label == null:
 		return
 	reward_label.text = text
-	reward_timer = 1.8
+	reward_timer = 2.1
 	reward_label.modulate.a = 1.0
 
 func _build_boss_bar() -> void:
@@ -928,8 +1001,8 @@ func _finish_run(title: String, success: bool) -> void:
 
 func _result_summary(success: bool) -> String:
 	var rank := _style_rank()
-	var no_glare_bonus: int = 75 if glare_uses == 0 else maxi(0, 45 - glare_uses * 12)
-	var clear_bonus: int = 120 if success else 0
+	var no_glare_bonus: int = 35 if glare_uses == 0 else maxi(0, 20 - glare_uses * 8)
+	var clear_bonus: int = 65 if success else 0
 	return "Rank %s   Score %d   Kills %d\nNo-glare bonus %d   Clear bonus %d\nCoins earned +%d   Total %d" % [rank, score, kills, no_glare_bonus, clear_bonus, last_earned, coins]
 
 func _build_shop_panel() -> void:
@@ -1012,7 +1085,7 @@ func _close_shop() -> void:
 		result_shop.grab_focus()
 
 func _upgrade_glare() -> void:
-	var costs := [0, 60, 140]
+	var costs := [0, 90, 220]
 	if glare_level >= 3:
 		_refresh_shop("Glare is maxed.")
 		return
@@ -1029,7 +1102,7 @@ func _upgrade_glare() -> void:
 
 func _refresh_shop(message: String = "") -> void:
 	var stuns := [0.35, 0.6, 0.85]
-	var costs := [0, 60, 140]
+	var costs := [0, 90, 220]
 	var text := "SHOP\nCoins: %d   Glare L%d %.2fs" % [coins, glare_level, stuns[glare_level - 1]]
 	if glare_level < 3:
 		text += "\nNext %.2fs costs %d" % [stuns[glare_level], costs[glare_level]]
@@ -1107,9 +1180,9 @@ func _bank_run() -> void:
 	if profile_saved:
 		return
 	profile_saved = true
-	var no_glare_bonus: int = 75 if glare_uses == 0 else maxi(0, 45 - glare_uses * 12)
-	var clear_bonus: int = 120 if cleared else 0
-	last_earned = maxi(0, int(score * 0.65) + int(style_meter * _rank_coin_multiplier()) + no_glare_bonus + clear_bonus)
+	var no_glare_bonus: int = 35 if glare_uses == 0 else maxi(0, 20 - glare_uses * 8)
+	var clear_bonus: int = 65 if cleared else 0
+	last_earned = maxi(0, int(score * 0.18) + int(style_meter * _rank_coin_multiplier() * 0.35) + no_glare_bonus + clear_bonus)
 	coins += last_earned
 	best_record = max(best_record, score)
 	_save_profile_values()
