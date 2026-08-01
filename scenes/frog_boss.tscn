@@ -1,0 +1,61 @@
+[gd_scene format=3 uid="uid://cwv3mc02hq8u"]
+
+[ext_resource type="Script" uid="uid://cfrogbossscript" path="res://scripts/frog_boss.gd" id="1_boss"]
+[ext_resource type="SpriteFrames" uid="uid://bfrogframes01" path="res://sprites/frog_frames.tres" id="2_frames"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_frog_boss"]
+radius = 10.5
+
+[sub_resource type="Gradient" id="Gradient_aoe"]
+offsets = PackedFloat32Array(0, 0.45, 1)
+colors = PackedColorArray(0.85, 1, 0.45, 1, 0.28, 1, 0.4, 0.9, 0.12, 0.7, 0.3, 0)
+
+[sub_resource type="Curve" id="Curve_aoe"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[node name="FrogBoss" type="CharacterBody2D"]
+script = ExtResource("1_boss")
+
+[node name="Anim" type="AnimatedSprite2D" parent="."]
+z_index = 4
+sprite_frames = ExtResource("2_frames")
+animation = &"idle_front"
+autoplay = "idle_front"
+scale = Vector2(1.65, 1.65)
+
+[node name="Aoe" type="CPUParticles2D" parent="."]
+z_index = -1
+emitting = false
+amount = 70
+lifetime = 0.55
+one_shot = true
+explosiveness = 1.0
+direction = Vector2(0, -1)
+spread = 180.0
+gravity = Vector2(0, 0)
+initial_velocity_min = 70.0
+initial_velocity_max = 130.0
+scale_amount_min = 1.0
+scale_amount_max = 2.0
+scale_amount_curve = SubResource("Curve_aoe")
+color_ramp = SubResource("Gradient_aoe")
+
+[node name="DeathBurst" type="CPUParticles2D" parent="."]
+z_index = 5
+emitting = false
+amount = 42
+lifetime = 0.55
+one_shot = true
+explosiveness = 1.0
+spread = 180.0
+gravity = Vector2(0, 0)
+initial_velocity_min = 90.0
+initial_velocity_max = 190.0
+scale_amount_min = 1.0
+scale_amount_max = 2.2
+color = Color(0.7, 1, 0.48, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, 6)
+shape = SubResource("CircleShape2D_frog_boss")

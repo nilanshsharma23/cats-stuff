@@ -4,11 +4,13 @@ extends Node2D
 @export var next_level_path: String = ""
 @export var rat_scene: PackedScene
 @export var frog_scene: PackedScene
+@export var frog_boss_scene: PackedScene
+@export var pigeon_boss_scene: PackedScene
 
 @onready var game_over: Control = $UI/GameOver
 @onready var banner: Label = $UI/Banner
 
-# Enemy roster. Each entry names a base scene ("rat"/"frog") and a config
+# Enemy roster. Each entry names a base scene ("rat"/"frog"/"frog_boss"/"pigeon_boss") and a config
 # dictionary applied on spawn (stats + tint + scale), so the two sprite rigs
 # yield a whole cast of distinct foes.
 var ROSTER := {
@@ -48,6 +50,20 @@ var ROSTER := {
 			"dash_cooldown_min": 1.0, "dash_cooldown_max": 1.8,
 			"knockback_resist": 0.9, "tint": Color(0.85, 0.4, 1.0),
 			"body_scale": 2.3, "score_value": 600}
+	},
+	"frog_boss": {
+		"scene": "frog_boss",
+		"cfg": {"is_boss": true, "max_health": 62, "move_speed": 58.0,
+			"hop_damage": 3, "hop_knockback": 420.0, "hop_radius": 24.0,
+			"aoe_damage": 2, "aoe_radius": 56.0, "tint": Color(0.56, 1.0, 0.5, 1.0),
+			"body_scale": 1.65, "score_value": 760}
+	},
+	"pigeon_boss": {
+		"scene": "pigeon_boss",
+		"cfg": {"is_boss": true, "max_health": 76, "move_speed": 62.0,
+			"circle_radius": 34.0, "cross_width": 12.0, "circle_damage": 2,
+			"cross_damage": 1, "tint": Color(1.0, 1.0, 1.0, 1.0),
+			"body_scale": 0.14, "score_value": 900}
 	},
 }
 
@@ -93,6 +109,7 @@ var shop_text: Label
 var shop_status: Label
 var upgrade_button: Button
 var boss_panel: Control
+var boss_name_label: Label
 var boss_fill: ColorRect
 var boss_bar_width: float = 160.0
 
@@ -254,7 +271,6 @@ func _check_combo_milestone() -> void:
 		_shake(2.8)
 
 func _build_waves() -> void:
-	# Level 1: clear 3 waves to advance. Level 2: 5 waves, then the boss.
 	if level_id == 1:
 		if tutorial_enabled:
 			waves = [
@@ -268,7 +284,7 @@ func _build_waves() -> void:
 				[["rat", 5], ["scurrier", 4]],
 				[["rat", 4], ["scurrier", 5], ["frog", 2]],
 			]
-	else:
+	elif level_id == 2:
 		waves = [
 			[["scurrier", 8], ["frog", 2]],
 			[["rat", 6], ["brute", 1], ["frog", 2]],
@@ -277,13 +293,30 @@ func _build_waves() -> void:
 			[["scurrier", 10], ["brute", 2], ["frog", 3]],
 			[["boss", 1], ["scurrier", 4]],
 		]
+	elif level_id == 3:
+		waves = [
+			[["spitter", 4], ["brute", 2]],
+			[["scurrier", 10], ["spitter", 4], ["frog", 2]],
+			[["frog_boss", 1], ["rat", 5]],
+		]
+	else:
+		waves = [
+			[["rat", 8], ["brute", 3], ["spitter", 3]],
+			[["scurrier", 10], ["spitter", 4], ["frog", 3]],
+			[["pigeon_boss", 1], ["scurrier", 4]],
+		]
 
 func _is_boss_wave(index: int) -> bool:
 	if index < 0 or index >= waves.size():
 		return false
 	for entry in waves[index]:
-		if String(entry[0]) == "boss":
+		var key := String(entry[0])
+		if key == "boss" or key == "frog_boss" or key == "pigeon_boss":
 			return true
+		if ROSTER.has(key):
+			var data: Dictionary = ROSTER[key]
+			if bool(data["cfg"].get("is_boss", false)):
+				return true
 	return false
 
 func _next_wave() -> void:
@@ -295,7 +328,7 @@ func _next_wave() -> void:
 		return
 	if _is_boss_wave(wave_index):
 		boss_active = true
-		_show_banner(BOSS_NAME)
+		_show_banner(_boss_banner_name(waves[wave_index]))
 		_set_reward("Final boss. End it in style.")
 	else:
 		_show_banner("WAVE %d" % (wave_index + 1))
@@ -310,7 +343,16 @@ func _spawn(key: String) -> void:
 	if not ROSTER.has(key):
 		return
 	var data: Dictionary = ROSTER[key]
-	var scene: PackedScene = rat_scene if String(data["scene"]) == "rat" else frog_scene
+	var scene: PackedScene = null
+	var scene_key := String(data["scene"])
+	if scene_key == "rat":
+		scene = rat_scene
+	elif scene_key == "frog":
+		scene = frog_scene
+	elif scene_key == "frog_boss":
+		scene = frog_boss_scene
+	elif scene_key == "pigeon_boss":
+		scene = pigeon_boss_scene
 	if scene == null:
 		return
 	var e := scene.instantiate()
@@ -320,9 +362,23 @@ func _spawn(key: String) -> void:
 	add_child(e)
 	if e.has_signal("died"):
 		if bool(data["cfg"].get("is_boss", false)):
-			e.died.connect(_on_boss_died)
+			e.died.connect(_on_boss_died.bind(e))
 		else:
 			e.died.connect(_on_enemy_died.bind(e))
+
+func _boss_banner_name(wave: Array) -> String:
+	for entry in wave:
+		var key := String(entry[0])
+		if not ROSTER.has(key):
+			continue
+		var data: Dictionary = ROSTER[key]
+		if bool(data["cfg"].get("is_boss", false)):
+			if key == "frog_boss":
+				return "THE BOG BARON"
+			if key == "pigeon_boss":
+				return "THE WIND WRAITH"
+			return BOSS_NAME
+	return BOSS_NAME
 
 # Count the enemies actually alive on the field. Dead enemies leave the
 # "enemies" group the instant they die, so this can never desync the way a
@@ -362,22 +418,25 @@ func _on_enemy_died(enemy: Node) -> void:
 		else:
 			call_deferred("_start_break")
 
-func _on_boss_died() -> void:
+func _on_boss_died(boss: Node = null) -> void:
 	if cleared:
 		return
 	cleared = true
 	boss_active = false
 	kills += 1
-	score += 600
+	var boss_score := 600
+	if boss != null and is_instance_valid(boss):
+		boss_score = int(boss.get("score_value"))
+	score += boss_score
 	style_meter += 60.0
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e) and e != null and not e.is_in_group("boss"):
 			e.queue_free()
-	_hype("BOSS DOWN", Color(1.0, 0.85, 0.3))
+	_hype("BOSS DOWN +%d" % boss_score, Color(1.0, 0.85, 0.3))
 	_flash(Color(1, 1, 1), 0.95)
 	_shake(4.5)
 	await get_tree().create_timer(0.7).timeout
-	_finish_run("VICTORY!", true)
+	_finish_run("VICTORY!" if next_level_path == "" else "LEVEL CLEAR", true)
 
 func _award_wave_clear() -> void:
 	_flash(Color(1.0, 0.9, 0.5), 0.28)
@@ -749,6 +808,7 @@ func _build_boss_bar() -> void:
 	boss_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	$UI.add_child(boss_panel)
 	var name_label := Label.new()
+	boss_name_label = name_label
 	name_label.position = Vector2(48, 3)
 	name_label.size = Vector2(160, 10)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -769,6 +829,13 @@ func _build_boss_bar() -> void:
 	boss_fill.color = Color(0.95, 0.2, 0.55, 1.0)
 	boss_panel.add_child(boss_fill)
 
+func _boss_name_color(shown_name: String) -> Color:
+	if shown_name.begins_with("GHOST"):
+		return Color(0.78, 0.6, 1.0, 1.0)
+	if shown_name == "THE BOG BARON":
+		return Color(0.55, 1.0, 0.42, 1.0)
+	return Color(1.0, 0.55, 1.0, 1.0)
+
 func _update_boss_bar() -> void:
 	if boss_panel == null:
 		return
@@ -779,6 +846,10 @@ func _update_boss_bar() -> void:
 	var mh: float = maxf(1.0, float(boss.get("max_health")))
 	var hp: float = clampf(float(boss.get("health")), 0.0, mh)
 	boss_panel.visible = true
+	if boss_name_label != null:
+		var shown_name: String = String(boss.get("boss_name")) if boss.get("boss_name") != null else BOSS_NAME
+		boss_name_label.text = shown_name
+		boss_name_label.add_theme_color_override("font_color", _boss_name_color(shown_name))
 	boss_fill.size = Vector2((boss_bar_width - 2.0) * (hp / mh), 4)
 
 func _build_result_panel() -> void:

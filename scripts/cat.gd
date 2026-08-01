@@ -65,6 +65,8 @@ var rmb_hold: float = 0.0
 var rmb_consumed: bool = false
 var mark_duration: float = 5.0
 var glare_level: int = 1
+var external_knockback: Vector2 = Vector2.ZERO
+var external_knockback_timer: float = 0.0
 
 func _ready() -> void:
 	add_to_group("player")
@@ -88,6 +90,14 @@ func _physics_process(delta: float) -> void:
 	tail_cd = max(tail_cd - delta, 0.0)
 	invuln_timer = max(invuln_timer - delta, 0.0)
 	bite_lock_timer = max(bite_lock_timer - delta, 0.0)
+	external_knockback_timer = max(external_knockback_timer - delta, 0.0)
+
+	if external_knockback_timer > 0.0:
+		velocity = external_knockback
+		external_knockback = external_knockback.move_toward(Vector2.ZERO, 900.0 * delta)
+		move_and_slide()
+		_play("run_" + _facing())
+		return
 
 	# Committed to a bite: rooted and vulnerable until the lock ends.
 	if bite_lock_timer > 0.0:
@@ -260,6 +270,8 @@ func _leer() -> void:
 	leer_cd = leer_cooldown
 	var aim := _aim()
 	last_direction = aim
+	glare_eyes.position = aim * 14.0
+	glare_eyes.rotation = aim.angle()
 	glare_eyes.visible = true
 	var t := create_tween()
 	t.tween_interval(leer_show)
@@ -289,6 +301,14 @@ func _play(name: String) -> void:
 func _set_flash(on: bool) -> void:
 	if anim.material != null:
 		anim.material.set_shader_parameter("active", on)
+
+func enemy_knockback(v: Vector2) -> void:
+	if dead:
+		return
+	external_knockback = v
+	external_knockback_timer = 0.18
+	if v != Vector2.ZERO:
+		last_direction = v.normalized()
 
 func take_damage(amount: int) -> bool:
 	if health <= 0 or is_dashing or invuln_timer > 0.0:
