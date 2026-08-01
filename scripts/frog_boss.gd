@@ -48,6 +48,8 @@ var knockback_vel: Vector2 = Vector2.ZERO
 var knockback_timer: float = 0.0
 
 func _ready() -> void:
+	# Opt back into pausing (the level root is PROCESS_MODE_ALWAYS).
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_to_group("frogs")
 	add_to_group("enemies")
 	add_to_group("boss")

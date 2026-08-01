@@ -7,6 +7,7 @@ signal died
 @export var detection_radius: float = 900.0
 @export var nibble_range: float = 18.0
 @export var nibble_damage: int = 1
+@export var nibble_windup: float = 0.35
 @export var dash_damage: int = 1
 @export var nibble_interval: float = 0.72
 @export var dash_cooldown_min: float = 1.0
@@ -43,6 +44,9 @@ var health: int = max_health
 var dead: bool = false
 
 var nibble_timer: float = 0.0
+var is_nibbling: bool = false
+var nibble_wind_timer: float = 0.0
+var nibble_dir: Vector2 = Vector2.DOWN
 var dash_timer: float = 0.0
 var dash_time_left: float = 0.0
 var dash_direction: Vector2 = Vector2.DOWN
@@ -70,6 +74,9 @@ var boss_combo_left: int = 0
 var enraged: bool = false
 
 func _ready() -> void:
+    # The level root runs PROCESS_MODE_ALWAYS (for its pause menus), which children
+    # inherit - so enemies must opt back into pausing or they act through pause.
+    process_mode = Node.PROCESS_MODE_PAUSABLE
     add_to_group("rats")
     add_to_group("enemies")
     if is_boss:
@@ -90,6 +97,7 @@ func stun(duration: float) -> void:
     stun_timer = max(stun_timer, duration)
     is_dashing = false
     is_winding = false
+    is_nibbling = false
     attack_timer = 0.0
     queue_redraw()
 
@@ -106,6 +114,7 @@ func freeze(duration: float) -> void:
     parry_window = 0.0
     is_dashing = false
     is_winding = false
+    is_nibbling = false
     attack_timer = 0.0
     velocity = Vector2.ZERO
     queue_redraw()
@@ -209,6 +218,19 @@ func _physics_process(delta: float) -> void:
             _start_dash(wind_dir)
         return
 
+    # Nibble wind-up: the tell flashes FIRST, damage lands only if the player is
+    # still in reach when it snaps - so melee is dodgeable and parryable.
+    if is_nibbling:
+        velocity = Vector2.ZERO
+        nibble_wind_timer -= delta
+        _face(nibble_dir)
+        _play("idle_" + _facing())
+        move_and_slide()
+        if nibble_wind_timer <= 0.0:
+            is_nibbling = false
+            _land_nibble()
+        return
+
     if is_dashing:
         _run_dash(delta)
         _update_animation()
@@ -237,8 +259,6 @@ func _physics_process(delta: float) -> void:
     if distance <= nibble_range and can_act and retreat_timer <= 0.0:
         velocity = Vector2.ZERO
         _try_nibble(aim)
-        if behavior == "skirmisher":
-            retreat_timer = 0.75   # hit and run: poke, then create space
     else:
         velocity = direction * move_speed
         if can_act and dash_timer <= 0.0:
@@ -271,6 +291,7 @@ func take_damage(amount: int) -> bool:
         hurt_timer = hurt_time
         is_dashing = false
         is_winding = false
+        is_nibbling = false
         attack_timer = 0.0
         boss_combo_left = 0
     queue_redraw()
@@ -349,11 +370,23 @@ func _face(direction: Vector2) -> void:
 func _try_nibble(direction: Vector2) -> void:
     if nibble_timer > 0.0:
         return
-    nibble_timer = nibble_interval
+    nibble_timer = nibble_interval + nibble_windup
+    is_nibbling = true
+    nibble_wind_timer = nibble_windup
+    nibble_dir = direction if direction != Vector2.ZERO else last_direction
+    parry_window = nibble_windup + 0.1
+    queue_redraw()
+
+# The wind-up has elapsed: snap at where the rat was aiming. Whiffs cleanly if
+# the player dashed or walked out of reach.
+func _land_nibble() -> void:
     attack_timer = attack_show_time
-    parry_window = 0.5
-    _show_bite(direction)
-    _bite(nibble_damage)
+    _show_bite(nibble_dir)
+    if player != null and is_instance_valid(player):
+        if global_position.distance_to(player.global_position) <= nibble_range * 1.3:
+            _bite(nibble_damage)
+    if behavior == "skirmisher":
+        retreat_timer = 0.75   # hit and run: poke, then create space
 
 func _begin_windup(direction: Vector2) -> void:
     is_winding = true
@@ -467,6 +500,12 @@ func _draw() -> void:
         draw_line(-side * 0.45, tip - side * 0.45, col, 1.2)
         draw_arc(tip, nibble_range, 0.0, TAU, 24, col, 1.4, true)
         draw_circle(Vector2.ZERO, 1.5 + 1.5 * t, Color(1.0, 0.1, 0.1, 0.85))
+    if is_nibbling:
+        var nt: float = 1.0 - clamp(nibble_wind_timer / maxf(nibble_windup, 0.01), 0.0, 1.0)
+        var ncol := Color(1.0, 0.3, 0.15, 0.35 + 0.5 * nt)
+        var bite_at: Vector2 = nibble_dir * nibble_range * 0.55
+        draw_arc(bite_at, nibble_range * (1.0 - 0.35 * nt), 0.0, TAU, 20, ncol, 1.4, true)
+        draw_circle(bite_at, 1.2 + 1.8 * nt, Color(1.0, 0.15, 0.1, 0.8))
     if attack_timer > 0.0:
         var a: float = clamp(attack_timer / attack_show_time, 0.0, 1.0)
         draw_arc(Vector2.ZERO, nibble_range, 0.0, TAU, 24, Color(1.0, 0.85, 0.35, 0.15 + 0.5 * a), 1.3, true)

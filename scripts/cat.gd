@@ -3,11 +3,13 @@ extends CharacterBody2D
 signal died
 signal style_event(kind: String, amount: int)
 
-@export var speed: int = 106
+# Faster than the base rat (112) so the player can always disengage; scurriers
+# (142) remain the one thing that can run you down.
+@export var speed: int = 122
 @export var max_health: int = 8
-@export var dash_speed: float = 270.0
-@export var dash_duration: float = 0.13
-@export var dash_cooldown: float = 0.5
+@export var dash_speed: float = 300.0
+@export var dash_duration: float = 0.16
+@export var dash_cooldown: float = 0.42
 
 # Light attack - paw swipe (left mouse). Low damage: basics take 2-3.
 @export var paw_damage: int = 1
@@ -22,8 +24,8 @@ signal style_event(kind: String, amount: int)
 @export var bite_damage: int = 2
 @export var bite_range: float = 37.0
 @export var bite_arc: float = -0.1
-@export var bite_lock: float = 0.42
-@export var bite_cooldown: float = 2.35
+@export var bite_lock: float = 0.28
+@export var bite_cooldown: float = 1.5
 @export var bite_knockback: float = 120.0
 @export var bite_bleed_dur: float = 5.0
 @export var bite_bleed_dps: float = 1.0
@@ -80,6 +82,8 @@ const CAT_DIE = preload("uid://dlkb61t56j13g")
 const CAT_HURT = preload("uid://cdwakwq3on3im")
 
 func _ready() -> void:
+	# Opt back into pausing (the level root is PROCESS_MODE_ALWAYS).
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_to_group("player")
 	_load_profile()
 	health = max_health
@@ -251,7 +255,6 @@ func _bite() -> void:
 	bite_cd_left = bite_cooldown
 	var aim := _aim()
 	last_direction = aim
-	invuln_timer = 0.0
 	_show_bite(aim)
 	style_event.emit("bite", 8)
 	var kills: int = 0
@@ -358,7 +361,7 @@ func _leer() -> void:
 	glare_tween.tween_property(glare_eyes, "scale", Vector2(1.05, 1.05), leer_show * 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	glare_tween.parallel().tween_property(glare_eyes, "modulate:a", 0.35, leer_show)
 	glare_tween.tween_callback(func(): glare_eyes.visible = false)
-	style_event.emit("glare", -4)
+	style_event.emit("glare", 0)
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e):
 			continue

@@ -1,6 +1,7 @@
 extends Node2D
 
 const UI_FONT: FontFile = preload("res://fonts/Pixellari.ttf")
+const SPAWN_MARKER: GDScript = preload("res://scripts/spawn_marker.gd")
 
 @export var level_id: int = 1
 @export var next_level_path: String = ""
@@ -31,7 +32,7 @@ var ROSTER := {
 	"brute": {
 		"scene": "rat",
 		"cfg": {"max_health": 8, "move_speed": 68.0, "nibble_damage": 2, "dash_damage": 2,
-			"behavior": "bruiser", "nibble_range": 23.0, "dash_chance": 0.36,
+			"behavior": "bruiser", "nibble_range": 23.0, "nibble_windup": 0.48, "dash_chance": 0.36,
 			"knockback_resist": 0.66,
 			"tint": Color(1.0, 0.5, 0.42), "body_scale": 1.08, "score_value": 42}
 	},
@@ -49,7 +50,7 @@ var ROSTER := {
 	"boss": {
 		"scene": "rat",
 		"cfg": {"is_boss": true, "max_health": 64, "move_speed": 86.0,
-			"nibble_damage": 2, "nibble_range": 30.0, "nibble_interval": 0.55,
+			"nibble_damage": 2, "nibble_range": 30.0, "nibble_interval": 0.55, "nibble_windup": 0.28,
 			"dash_chance": 0.9, "dash_windup": 0.52, "dash_speed": 286.0,
 			"dash_cooldown_min": 1.0, "dash_cooldown_max": 1.8,
 			"knockback_resist": 0.9, "tint": Color(0.85, 0.4, 1.0),
@@ -86,11 +87,12 @@ var glare_level: int = 1
 var style_meter: float = 0.0
 var style_timeout: float = 0.0
 var no_glare_chain: int = 0
-var glare_uses: int = 0
 var profile_saved: bool = false
 var tutorial_enabled: bool = false
 var tutorial_step: int = 0
 var endless: bool = false
+var pending_spawns: int = 0
+var best_chain: int = 0
 var last_earned: int = 0
 var result_path: String = ""
 var reward_timer: float = 0.0
@@ -219,7 +221,7 @@ func _process(delta: float) -> void:
 	_sync_fight_ui()
 
 func _is_fight_active() -> bool:
-	return not cleared and not get_tree().paused and (_live_enemy_count() > 0 or boss_active)
+	return not cleared and not get_tree().paused and (_live_enemy_count() > 0 or boss_active or pending_spawns > 0)
 
 func _set_player_health_visible(shown: bool) -> void:
 	var cat := get_tree().get_first_node_in_group("player")
@@ -447,35 +449,63 @@ func _next_wave() -> void:
 	else:
 		_show_banner("WAVE %d" % (wave_index + 1))
 		_set_reward("Rank high. Cash out harder.")
+	# Bosses land first; the rabble trickles in shuffled batches so a wave opens
+	# as a readable fight, not a blob dumped on your head in one frame.
+	var bosses: Array = []
+	var rabble: Array = []
 	for entry in waves[wave_index]:
 		var key := String(entry[0])
-		var count := int(entry[1])
-		for i in count:
-			_spawn(key)
+		if not ROSTER.has(key):
+			continue
+		var is_boss := bool(ROSTER[key]["cfg"].get("is_boss", false))
+		for i in int(entry[1]):
+			if is_boss:
+				bosses.append(key)
+			else:
+				rabble.append(key)
+	rabble.shuffle()
+	for key in bosses:
+		_spawn_after(String(key), 0.0)
+	for i in rabble.size():
+		_spawn_after(String(rabble[i]), 0.55 * float(i / 3))
 
-# Difficulty that actually adapts. Enemies get tougher the deeper you are in a
-# level AND the more the player has powered up, so buying upgrades raises the
-# ceiling instead of trivialising the fight. Bosses scale gently by level only.
-func _heat() -> float:
-	var h := float(hp_buys + dash_buys + leer_buys) + float(glare_level - 1)
-	var cat := get_tree().get_first_node_in_group("player")
-	if cat != null:
-		h += maxf(0.0, float(int(cat.get("max_health")) - 8)) * 0.5
-	return h
-
+# Difficulty scales with wave depth only - upgrades the player buys are theirs
+# to keep. Growth is gentle and capped so late waves add pressure through
+# numbers and mix, not HP sponges. Bosses scale gently by level only.
 func _scaled_cfg(cfg: Dictionary) -> Dictionary:
 	var out: Dictionary = cfg.duplicate(true)
 	if bool(out.get("is_boss", false)):
 		out["max_health"] = int(round(float(out.get("max_health", 40)) * (1.0 + 0.1 * float(level_id - 1))))
 		return out
-	var heat := _heat()
-	var hp_mul := 1.0 + 0.14 * float(maxi(wave_index, 0)) + 0.12 * heat
+	var hp_mul := minf(1.0 + 0.08 * float(maxi(wave_index, 0)), 1.9)
 	out["max_health"] = maxi(1, int(round(float(out.get("max_health", 3)) * hp_mul)))
 	if out.has("move_speed"):
-		out["move_speed"] = float(out["move_speed"]) * (1.0 + 0.04 * heat)
+		out["move_speed"] = float(out["move_speed"]) * minf(1.0 + 0.01 * float(maxi(wave_index, 0)), 1.1)
 	return out
 
-func _spawn(key: String) -> void:
+# Staggered spawn: wait out the batch delay, flash a converging marker at the
+# spot for half a second, then materialise the enemy there. pending_spawns keeps
+# the wave-clear check honest while stragglers are still on their way in.
+func _spawn_after(key: String, delay: float) -> void:
+	if not ROSTER.has(key):
+		return
+	pending_spawns += 1
+	if delay > 0.0:
+		await get_tree().create_timer(delay, false).timeout
+	if cleared or not is_inside_tree():
+		pending_spawns -= 1
+		return
+	var pos := _spawn_point()
+	var marker: Node2D = SPAWN_MARKER.new()
+	marker.position = pos
+	add_child(marker)
+	await get_tree().create_timer(0.5, false).timeout
+	pending_spawns -= 1
+	if cleared or not is_inside_tree():
+		return
+	_spawn_at(key, pos)
+
+func _spawn_at(key: String, pos: Vector2) -> void:
 	if not ROSTER.has(key):
 		return
 	var data: Dictionary = ROSTER[key]
@@ -494,7 +524,7 @@ func _spawn(key: String) -> void:
 	var e := scene.instantiate()
 	if e.has_method("configure"):
 		e.configure(_scaled_cfg(data["cfg"]))
-	e.position = _spawn_point()
+	e.position = pos
 	add_child(e)
 	if e.has_signal("died"):
 		if bool(data["cfg"].get("is_boss", false)):
@@ -549,13 +579,13 @@ func _on_enemy_died(enemy: Node) -> void:
 	_flash(Color(1.0, 0.82, 0.35), 0.16)
 	_shake(1.2)
 	_on_style_event("enemy_down", 18)
-	if not cleared and not boss_active and _live_enemy_count() == 0:
+	if not cleared and not boss_active and _live_enemy_count() == 0 and pending_spawns == 0:
 		_award_wave_clear()
 		call_deferred("_finish_wave_after_delay")
 
 func _finish_wave_after_delay() -> void:
 	await get_tree().create_timer(2.0).timeout
-	if cleared or boss_active or _live_enemy_count() > 0:
+	if cleared or boss_active or _live_enemy_count() > 0 or pending_spawns > 0:
 		return
 	if endless or wave_index + 1 >= waves.size():
 		_next_wave()
@@ -595,6 +625,7 @@ func _award_wave_clear() -> void:
 	score += bonus
 	style_meter += 10.0
 	no_glare_chain += 1
+	best_chain = maxi(best_chain, no_glare_chain)
 	_set_reward("Wave clear +%d  Rank %s" % [bonus, _style_rank()])
 
 # --- Between-wave break & roguelite shop ------------------------------------
@@ -835,13 +866,12 @@ func _on_style_event(kind: String, amount: int) -> void:
 	# The combo is a damage-and-parry streak, not a dash-spam counter.
 	if kind == "dash":
 		return
+	# LEER is a core setup tool: free to press, never taxes style or the combo.
+	if kind == "glare":
+		_set_reward("LEER! Marked prey - hit them to EXECUTE.")
+		_flash(Color(1.0, 0.2, 0.25), 0.22)
+		return
 	if amount < 0:
-		if kind == "glare":
-			# LEER is now an offensive setup, not a punish: it costs a sliver of
-			# style but never wipes the combo.
-			glare_uses += 1
-			_set_reward("LEER! Marked prey - hit them to EXECUTE.")
-			_flash(Color(1.0, 0.2, 0.25), 0.22)
 		if kind == "damage_taken":
 			_hitstop(0.035, 0.12)
 			_flash(Color(1.0, 0.2, 0.2), 0.5)
@@ -853,6 +883,7 @@ func _on_style_event(kind: String, amount: int) -> void:
 		return
 	if kind == "paw_hit" or kind == "paw_kill" or kind == "enemy_down" or kind == "parry" or kind == "execute":
 		no_glare_chain += 1
+		best_chain = maxi(best_chain, no_glare_chain)
 	var multiplier: float = 1.0 + mini(no_glare_chain, 28) * 0.075
 	style_meter += amount * multiplier
 	style_timeout = 3.5
@@ -916,19 +947,21 @@ func _rank_bonus() -> int:
 		return 10
 	return 0
 
+# Style still pays best, but the floor is livable: a rough run must still fund
+# a couple of upgrades or the economy turns into a grind spiral.
 func _rank_coin_multiplier() -> float:
 	var rank := _style_rank()
 	if rank == "SS - Ssuper Smexxy":
-		return 1.08
+		return 1.15
 	if rank == "S - Smexy":
-		return 0.86
+		return 0.95
 	if rank == "A - Awe":
-		return 0.62
+		return 0.8
 	if rank == "B - Blowin' up":
-		return 0.42
+		return 0.65
 	if rank == "C - Comeback?":
-		return 0.24
-	return 0.12
+		return 0.5
+	return 0.35
 
 func _build_hud() -> void:
 	# Top-left: wave / enemies-left plate. Top-right: score plate. They no longer
@@ -1221,11 +1254,11 @@ func _finish_run(title: String, success: bool) -> void:
 
 func _result_summary(success: bool) -> String:
 	var rank := _style_rank()
-	var no_glare_bonus: int = 25 if glare_uses == 0 else maxi(0, 16 - glare_uses * 7)
+	var combo_bonus: int = mini(best_chain * 2, 50)
 	var clear_bonus: int = 50 if success else 0
 	if endless:
-		return "ENDLESS - reached wave %d\nRank %s   Score %d   Kills %d\nCoins earned +%d   Total %d" % [wave_index + 1, rank, score, kills, last_earned, coins]
-	return "Rank %s   Score %d   Kills %d\nNo-glare bonus %d   Clear bonus %d\nCoins earned +%d   Total %d" % [rank, score, kills, no_glare_bonus, clear_bonus, last_earned, coins]
+		return "ENDLESS - reached wave %d\nRank %s   Score %d   Kills %d\nBest chain x%d\nCoins earned +%d   Total %d" % [wave_index + 1, rank, score, kills, best_chain, last_earned, coins]
+	return "Rank %s   Score %d   Kills %d\nChain bonus %d   Clear bonus %d\nCoins earned +%d   Total %d" % [rank, score, kills, combo_bonus, clear_bonus, last_earned, coins]
 
 func _build_shop_panel() -> void:
 	shop_panel = Control.new()
@@ -1436,9 +1469,9 @@ func _bank_run() -> void:
 	if profile_saved:
 		return
 	profile_saved = true
-	var no_glare_bonus: int = 25 if glare_uses == 0 else maxi(0, 16 - glare_uses * 7)
+	var combo_bonus: int = mini(best_chain * 2, 50)
 	var clear_bonus: int = 50 if cleared else 0
-	last_earned = maxi(0, int(score * 0.12) + int(style_meter * _rank_coin_multiplier() * 0.25) + no_glare_bonus + clear_bonus)
+	last_earned = maxi(0, int(score * 0.12) + int(style_meter * _rank_coin_multiplier() * 0.25) + combo_bonus + clear_bonus)
 	coins += last_earned
 	best_record = max(best_record, score)
 	_save_profile_values()

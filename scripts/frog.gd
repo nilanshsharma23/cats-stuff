@@ -51,6 +51,9 @@ var bite_cd: float = 0.0
 var strafe_sign: float = 1.0
 
 func _ready() -> void:
+	# Opt back into pausing: the level root is PROCESS_MODE_ALWAYS and children
+	# inherit it, which would let frogs keep acting through pause menus.
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_to_group("frogs")
 	add_to_group("enemies")
 	if is_boss:
@@ -319,6 +322,8 @@ func _play(name: String) -> void:
 		anim.play(name)
 
 func _draw() -> void:
+	if is_croaking:
+		_draw_croak_tell()
 	if bleed_timer > 0.0:
 		_draw_bleed()
 	if is_marked():
@@ -327,18 +332,20 @@ func _draw() -> void:
 		_draw_frost()
 		return
 
-func _draw_bleed() -> void:
-	var col := Color(0.8, 0.05, 0.08, 0.85)
-	draw_circle(Vector2(-2, 3), 1.1, col)
-	draw_circle(Vector2(2.5, 5), 0.9, col)
-	draw_circle(Vector2(0, 6.5), 0.7, col)
-	if not is_croaking:
-		return
+# The expanding ring that warns the croak AoE is about to pop. Lives in its own
+# helper so it draws every croak, not just while the frog happens to be bleeding.
+func _draw_croak_tell() -> void:
 	var t: float = 1.0 - clamp(croak_timer / croak_windup, 0.0, 1.0)
 	var r: float = aoe_radius * (0.35 + 0.65 * t)
 	var a: float = 0.22 + 0.4 * t
 	draw_arc(Vector2.ZERO, r, 0.0, TAU, 40, Color(0.3, 1.0, 0.45, a), 1.5, true)
 	draw_arc(Vector2.ZERO, r * 0.6, 0.0, TAU, 28, Color(0.55, 1.0, 0.6, a * 0.55), 1.0, true)
+
+func _draw_bleed() -> void:
+	var col := Color(0.8, 0.05, 0.08, 0.85)
+	draw_circle(Vector2(-2, 3), 1.1, col)
+	draw_circle(Vector2(2.5, 5), 0.9, col)
+	draw_circle(Vector2(0, 6.5), 0.7, col)
 
 func _draw_frost() -> void:
 	var col := Color(0.6, 0.92, 1.0, 0.9)
