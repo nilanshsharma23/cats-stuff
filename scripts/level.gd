@@ -114,9 +114,11 @@ var boss_panel: Control
 var boss_name_label: Label
 var boss_fill: ColorRect
 var boss_bar_width: float = 160.0
-var ability_panel: VBoxContainer
+var ability_panel: HBoxContainer
 var ability_slots: Dictionary = {}
 var hud_panel: ColorRect
+var player_panel: ColorRect
+var score_panel: ColorRect
 var pause_panel: Control
 var pause_resume: Button
 var pause_retry: Button
@@ -185,10 +187,6 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if get_tree().paused:
-		_update_shake(delta)
-		_update_boss_bar()
-		_update_ability_bar()
-		_refresh_hud()
 		_sync_fight_ui()
 		return
 	if style_timeout > 0.0:
@@ -217,7 +215,7 @@ func _set_player_health_visible(shown: bool) -> void:
 func _sync_fight_ui() -> void:
 	var shown := _is_fight_active()
 	_set_player_health_visible(shown)
-	for n in [hud_panel, wave_label, score_label, combo_label, ability_panel]:
+	for n in [hud_panel, score_panel, player_panel, wave_label, score_label, combo_label, ability_panel]:
 		if n != null:
 			n.visible = shown
 	if enemies_label != null:
@@ -299,7 +297,7 @@ func _spawn_popup(pos: Vector2, text: String) -> void:
 	t.tween_callback(l.queue_free)
 
 func _hide_hud() -> void:
-	for n in [hud_panel, wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel, ability_panel]:
+	for n in [hud_panel, score_panel, player_panel, wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel, ability_panel]:
 		if n != null:
 			n.visible = false
 	var cat := get_tree().get_first_node_in_group("player")
@@ -821,46 +819,42 @@ func _rank_coin_multiplier() -> float:
 	return 0.12
 
 func _build_hud() -> void:
-	hud_panel = ColorRect.new()
-	hud_panel.name = "HudPanel"
-	hud_panel.position = Vector2(60, 5)
-	hud_panel.size = Vector2(190, 24)
-	hud_panel.color = Color(0.035, 0.035, 0.055, 0.78)
-	hud_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	$UI.add_child(hud_panel)
-	score_label = _hud_label(Vector2(66, 8), Vector2(86, 9), Color(0.85, 0.9, 1.0, 1.0), 7, HORIZONTAL_ALIGNMENT_LEFT)
-	combo_label = _hud_label(Vector2(66, 18), Vector2(178, 9), Color(1.0, 0.82, 0.25, 1.0), 7, HORIZONTAL_ALIGNMENT_LEFT)
-	wave_label = _hud_label(Vector2(152, 8), Vector2(94, 9), Color(0.95, 0.92, 0.7, 1.0), 7, HORIZONTAL_ALIGNMENT_RIGHT)
+	hud_panel = _hud_plate("HudTop", Vector2(76, 4), Vector2(104, 16), Color(0.03, 0.035, 0.045, 0.76))
+	score_panel = _hud_plate("HudScore", Vector2(184, 5), Vector2(66, 17), Color(0.04, 0.04, 0.05, 0.82))
+	player_panel = _hud_plate("PlayerCard", Vector2(8, 111), Vector2(84, 27), Color(0.035, 0.04, 0.055, 0.86))
+	wave_label = _hud_label(Vector2(82, 7), Vector2(92, 9), Color(0.95, 0.92, 0.74, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
+	score_label = _hud_label(Vector2(188, 8), Vector2(58, 10), Color(0.95, 0.95, 1.0, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
+	combo_label = _hud_label(Vector2(13, 117), Vector2(74, 16), Color(1.0, 0.82, 0.25, 1.0), 7, HORIZONTAL_ALIGNMENT_LEFT)
 	enemies_label = _hud_label(Vector2(0, 0), Vector2(1, 1), Color(1.0, 0.62, 0.55, 1.0), 7, HORIZONTAL_ALIGNMENT_RIGHT)
 	enemies_label.visible = false
-	reward_label = _hud_label(Vector2(42, 32), Vector2(172, 12), Color(0.5, 1.0, 0.85, 1.0), 8, HORIZONTAL_ALIGNMENT_CENTER)
+	reward_label = _hud_label(Vector2(54, 91), Vector2(148, 12), Color(0.5, 1.0, 0.85, 1.0), 8, HORIZONTAL_ALIGNMENT_CENTER)
 	reward_label.modulate.a = 0.0
 	_refresh_hud()
 
 func _build_ability_bar() -> void:
 	ability_slots.clear()
-	ability_panel = VBoxContainer.new()
+	ability_panel = HBoxContainer.new()
 	ability_panel.name = "AbilityBar"
-	ability_panel.position = Vector2(7, 58)
-	ability_panel.add_theme_constant_override("separation", 2)
+	ability_panel.position = Vector2(69, 122)
+	ability_panel.add_theme_constant_override("separation", 3)
 	$UI.add_child(ability_panel)
-	_add_ability_slot("PAW", "LMB", Color(0.48, 1.0, 0.66, 0.95))
-	_add_ability_slot("DASH", "SPC", Color(0.62, 0.9, 1.0, 0.95))
-	_add_ability_slot("BITE", "RMB", Color(1.0, 0.45, 0.34, 0.95))
-	_add_ability_slot("TAIL", "HOLD", Color(0.5, 0.78, 1.0, 0.95))
+	_add_ability_slot("PAW", "M1", Color(0.48, 1.0, 0.66, 0.95))
+	_add_ability_slot("DASH", "SP", Color(0.62, 0.9, 1.0, 0.95))
+	_add_ability_slot("BITE", "M2", Color(1.0, 0.45, 0.34, 0.95))
+	_add_ability_slot("TAIL", "H", Color(0.5, 0.78, 1.0, 0.95))
 	_add_ability_slot("GLARE", "E", Color(1.0, 0.28, 0.45, 0.95))
 
 func _add_ability_slot(key: String, hint: String, color: Color) -> void:
 	var root := Control.new()
-	root.custom_minimum_size = Vector2(52, 12)
+	root.custom_minimum_size = Vector2(31, 14)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var bg := ColorRect.new()
-	bg.size = Vector2(52, 12)
+	bg.size = Vector2(31, 14)
 	bg.color = Color(0.06, 0.055, 0.075, 0.86)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(bg)
 	var fill := ColorRect.new()
-	fill.size = Vector2(52, 12)
+	fill.size = Vector2(31, 14)
 	fill.color = color
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(fill)
@@ -870,7 +864,7 @@ func _add_ability_slot(key: String, hint: String, color: Color) -> void:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_override("font", UI_FONT)
-	label.add_theme_font_size_override("font_size", 6)
+	label.add_theme_font_size_override("font_size", 5)
 	label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	label.add_theme_constant_override("outline_size", 2)
@@ -901,12 +895,22 @@ func _set_ability_slot(key: String, cd: float, max_cd: float) -> void:
 	var slot: Dictionary = ability_slots[key]
 	var fill: ColorRect = slot["fill"]
 	var label: Label = slot["label"]
-	var width: float = 52.0
+	var width: float = 31.0
 	var ready: bool = cd <= 0.05
 	var fill_ratio: float = 1.0 if ready else 1.0 - clampf(cd / maxf(max_cd, 0.01), 0.0, 1.0)
-	fill.size = Vector2(width * fill_ratio, 12.0)
+	fill.size = Vector2(width * fill_ratio, 14.0)
 	fill.color = slot["color"] if ready else Color(0.18, 0.17, 0.2, 0.95)
 	label.text = "%s %s" % [key, String(slot["hint"])] if ready else "%s %.1f" % [key, cd]
+
+func _hud_plate(title: String, pos: Vector2, box: Vector2, color: Color) -> ColorRect:
+	var plate := ColorRect.new()
+	plate.name = title
+	plate.position = pos
+	plate.size = box
+	plate.color = color
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$UI.add_child(plate)
+	return plate
 
 func _hud_label(pos: Vector2, box: Vector2, color: Color, font_size: int, align: int) -> Label:
 	var label := Label.new()
@@ -933,9 +937,9 @@ func _refresh_hud() -> void:
 		return
 	var rank := _style_rank()
 	var left := _live_enemy_count()
-	wave_label.text = "W%d/%d  LEFT %d" % [clampi(wave_index + 1, 1, _normal_wave_count()), _normal_wave_count(), left]
-	score_label.text = "SCORE %d  COIN %d" % [score, coins]
-	combo_label.text = "%s  x%d" % [rank, no_glare_chain] if no_glare_chain > 1 else rank
+	wave_label.text = "WAVE %d  LEFT %d" % [clampi(wave_index + 1, 1, _normal_wave_count()), left]
+	score_label.text = "%d KILLS\n%d COIN" % [kills, coins]
+	combo_label.text = "%s\nSCORE %d" % [rank, score]
 	combo_label.add_theme_color_override("font_color", _rank_color(rank))
 
 func _rank_color(rank: String) -> Color:

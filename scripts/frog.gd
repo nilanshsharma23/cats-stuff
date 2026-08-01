@@ -4,11 +4,16 @@ signal died
 
 @export var move_speed: float = 86.0
 @export var detection_radius: float = 900.0
-@export var croak_range: float = 42.0
+@export var croak_range: float = 34.0
 @export var aoe_radius: float = 28.0
 @export var aoe_damage: int = 1
-@export var croak_cooldown: float = 1.8
+@export var croak_cooldown: float = 2.35
 @export var croak_windup: float = 0.55
+@export var bite_range: float = 15.0
+@export var bite_damage: int = 1
+@export var bite_cooldown: float = 0.75
+@export var bloodlust_radius: float = 96.0
+@export var bloodlust_speed_mul: float = 1.32
 @export var max_health: int = 3
 @export var hurt_time: float = 0.22
 
@@ -39,6 +44,7 @@ var bleed_timer: float = 0.0
 var bleed_accum: float = 0.0
 var bleed_dps: float = 0.0
 var attack_lock: float = 0.0
+var bite_cd: float = 0.0
 
 func _ready() -> void:
     add_to_group("frogs")
@@ -120,6 +126,7 @@ func _physics_process(delta: float) -> void:
     parry_window = max(parry_window - delta, 0.0)
     marked_timer = max(marked_timer - delta, 0.0)
     attack_lock = max(attack_lock - delta, 0.0)
+    bite_cd = max(bite_cd - delta, 0.0)
     _tick_bleed(delta)
     if dead:
         return
@@ -181,21 +188,28 @@ func _physics_process(delta: float) -> void:
     var direction := _chase_direction(to_player)
     _face(direction)
 
-    if distance <= croak_range:
-        velocity = Vector2.ZERO
-        if croak_cd <= 0.0 and attack_lock <= 0.0:
-            is_croaking = true
-            croak_timer = croak_windup
-            croak_cd = croak_cooldown
-            parry_window = croak_windup
-            _play("croak_" + _facing())
-        else:
-            _play("idle_" + _facing())
+    if distance <= bite_range and bite_cd <= 0.0:
+        _bite_player(direction)
+    elif distance <= croak_range and croak_cd <= 0.0 and attack_lock <= 0.0:
+        is_croaking = true
+        croak_timer = croak_windup
+        croak_cd = croak_cooldown
+        parry_window = croak_windup
+        _play("croak_" + _facing())
     else:
-        velocity = direction * move_speed
+        var chase_mul: float = bloodlust_speed_mul if distance <= bloodlust_radius else 1.0
+        velocity = direction * move_speed * chase_mul
         _play("walk_" + _facing())
 
     move_and_slide()
+
+func _bite_player(direction: Vector2) -> void:
+    bite_cd = bite_cooldown
+    attack_lock = 0.18
+    velocity = direction * move_speed * 0.35
+    _play("croak_" + _facing())
+    if player != null and is_instance_valid(player) and player.has_method("take_damage"):
+        player.take_damage(bite_damage)
 
 func _release_aoe() -> void:
     aoe.restart()

@@ -68,10 +68,10 @@ grow_vertical = 2
 
 [node name="HealthBar" type="TextureProgressBar" parent="UI/Control" unique_id=1622409584]
 layout_mode = 1
-offset_left = 8.0
-offset_top = 8.0
-offset_right = 56.0
-offset_bottom = 48.0
+offset_left = 14.0
+offset_top = 129.0
+offset_right = 82.0
+offset_bottom = 137.0
 max_value = 10.0
 value = 5.0
 texture_under = ExtResource("4_cxap7")
