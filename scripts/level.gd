@@ -55,7 +55,6 @@ const BOSS_NAME := "THE RAT KING"
 
 var waves: Array = []
 var wave_index: int = -1
-var alive: int = 0
 var cleared: bool = false
 var boss_active: bool = false
 var rng := RandomNumberGenerator.new()
@@ -102,12 +101,13 @@ var cam: Camera2D
 var shake_amt: float = 0.0
 var flash_rect: ColorRect
 var flash_tween: Tween
-var hitstop_token: int = 0
-var last_impact_ms: int = 0
 var last_milestone: int = 0
 
 func _ready() -> void:
 	get_tree().paused = false
+	# Defensive: a prior run that changed scene mid-effect could leave this
+	# stuck, freezing the whole game. Always start at full speed.
+	Engine.time_scale = 1.0
 	rng.randomize()
 	_load_profile()
 	tutorial_enabled = bool(get_tree().get_meta("tutorial_enabled", false))
@@ -186,29 +186,6 @@ func _flash(color: Color, strength: float) -> void:
 	flash_tween = create_tween()
 	flash_tween.tween_property(flash_rect, "modulate:a", 0.0, 0.3)
 
-# Freeze the whole game for a beat (hitstop), optionally trailing into a short
-# slow-mo, then snap back. The token guards against overlapping calls.
-func _timefreeze(freeze_dur: float, slow_dur: float = 0.0, slow_scale: float = 0.4) -> void:
-	hitstop_token += 1
-	var my := hitstop_token
-	Engine.time_scale = 0.0
-	await get_tree().create_timer(freeze_dur, true, false, true).timeout
-	if my != hitstop_token:
-		return
-	if slow_dur > 0.0:
-		Engine.time_scale = slow_scale
-		await get_tree().create_timer(slow_dur, true, false, true).timeout
-		if my != hitstop_token:
-			return
-	Engine.time_scale = 1.0
-
-func _impact_ready(gap_ms: int) -> bool:
-	var now := Time.get_ticks_msec()
-	if now - last_impact_ms < gap_ms:
-		return false
-	last_impact_ms = now
-	return true
-
 func _hype(text: String, color: Color) -> void:
 	banner.add_theme_color_override("font_color", color)
 	banner.text = text
@@ -220,7 +197,6 @@ func _multikill(n: int) -> void:
 	_hype(names.get(n, "MASSACRE"), Color(1.0, 0.72, 0.2))
 	_flash(Color(1.0, 0.85, 0.45), 0.32 + 0.05 * n)
 	_shake(2.2 + n * 0.4)
-	_timefreeze(0.06 + min(n, 6) * 0.012)
 	score += n * 8
 
 func _check_combo_milestone() -> void:
@@ -230,7 +206,6 @@ func _check_combo_milestone() -> void:
 		_hype(tiers[no_glare_chain], Color(1.0, 0.4, 0.9))
 		_flash(Color(1.0, 0.4, 0.9), 0.5)
 		_shake(2.8)
-		_timefreeze(0.06)
 
 func _build_waves() -> void:
 	# Level 1: clear 3 waves to advance. Level 2: 5 waves, then the boss.
@@ -297,12 +272,21 @@ func _spawn(key: String) -> void:
 		e.configure(data["cfg"])
 	e.position = _spawn_point()
 	add_child(e)
-	alive += 1
 	if e.has_signal("died"):
 		if bool(data["cfg"].get("is_boss", false)):
 			e.died.connect(_on_boss_died)
 		else:
 			e.died.connect(_on_enemy_died.bind(e))
+
+# Count the enemies actually alive on the field. Dead enemies leave the
+# "enemies" group the instant they die, so this can never desync the way a
+# hand-tracked counter can.
+func _live_enemy_count() -> int:
+	var n := 0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e) and not e.is_in_group("boss"):
+			n += 1
+	return n
 
 func _spawn_point() -> Vector2:
 	var cat := get_tree().get_first_node_in_group("player")
@@ -316,14 +300,13 @@ func _spawn_point() -> Vector2:
 	return Vector2(rng.randf_range(min_pos.x, max_pos.x), rng.randf_range(min_pos.y, max_pos.y))
 
 func _on_enemy_died(enemy: Node) -> void:
-	alive -= 1
 	kills += 1
 	var value: int = 12
 	if enemy != null and is_instance_valid(enemy):
 		value = int(enemy.get("score_value"))
 	score += value + wave_index * 4
 	_on_style_event("enemy_down", 14)
-	if alive <= 0 and not cleared and not boss_active:
+	if not cleared and not boss_active and _live_enemy_count() == 0:
 		_award_wave_clear()
 		call_deferred("_next_wave")
 
@@ -341,7 +324,7 @@ func _on_boss_died() -> void:
 	_hype("BOSS DOWN", Color(1.0, 0.85, 0.3))
 	_flash(Color(1, 1, 1), 0.95)
 	_shake(4.5)
-	await _timefreeze(0.45, 0.5, 0.3)
+	await get_tree().create_timer(0.7).timeout
 	_finish_run("VICTORY!", true)
 
 func _award_wave_clear() -> void:
@@ -361,7 +344,7 @@ func _level_cleared() -> void:
 func _on_cat_died() -> void:
 	_flash(Color(0.8, 0.05, 0.1), 0.85)
 	_shake(4.0)
-	await _timefreeze(0.35, 0.45, 0.25)
+	await get_tree().create_timer(0.55).timeout
 	_finish_run("YOU GOT CLIPPED", false)
 
 func _input(event: InputEvent) -> void:
@@ -401,8 +384,6 @@ func _on_style_event(kind: String, amount: int) -> void:
 		if kind == "damage_taken":
 			_flash(Color(1.0, 0.2, 0.2), 0.5)
 			_shake(2.6)
-			if _impact_ready(120):
-				_timefreeze(0.05)
 		no_glare_chain = 0
 		last_milestone = 0
 		style_meter = max(style_meter + amount, 0.0)
@@ -424,14 +405,11 @@ func _on_style_event(kind: String, amount: int) -> void:
 			_set_reward("Clean kill +%d  Chain x%d" % [scored, no_glare_chain])
 			_flash(Color(1, 1, 1), 0.18)
 			_shake(1.4)
-			if _impact_ready(70):
-				_timefreeze(0.045)
 		elif kind == "parry":
 			_set_reward("PARRY! Frozen +%d  Chain x%d" % [scored, no_glare_chain])
 			_hype("PARRY!", Color(0.4, 0.92, 1.0))
 			_flash(Color(0.55, 0.92, 1.0), 0.7)
 			_shake(3.6)
-			_timefreeze(0.11, 0.16, 0.38)
 	_check_combo_milestone()
 
 func _style_rank() -> String:
@@ -518,7 +496,7 @@ func _refresh_hud() -> void:
 		enemies_label.text = ""
 	else:
 		wave_label.text = "WAVE %d / %d" % [clampi(wave_index + 1, 1, _normal_wave_count()), _normal_wave_count()]
-		enemies_label.text = "LEFT %d" % max(alive, 0)
+		enemies_label.text = "LEFT %d" % _live_enemy_count()
 	score_label.text = "SCORE %d   KILLS %d   COINS %d" % [score, kills, coins]
 	var rank := _style_rank()
 	if no_glare_chain > 1:

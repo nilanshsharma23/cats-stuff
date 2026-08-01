@@ -217,7 +217,7 @@ func _die() -> void:
     $CollisionShape2D.set_deferred("disabled", true)
     _play("death_" + _facing())
     died.emit()
-    await get_tree().create_timer(0.55).timeout
+    await get_tree().create_timer(0.55, true, false, true).timeout
     if is_instance_valid(self):
         queue_free()
 

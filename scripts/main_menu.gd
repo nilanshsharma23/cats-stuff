@@ -15,6 +15,7 @@ var shop_status: Label
 
 func _ready() -> void:
 	get_tree().paused = false
+	Engine.time_scale = 1.0
 	_load_profile()
 	_scale_menu()
 	_ensure_stats()
