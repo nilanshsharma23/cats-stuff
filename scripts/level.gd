@@ -14,18 +14,18 @@ extends Node2D
 var ROSTER := {
 	"rat": {
 		"scene": "rat",
-		"cfg": {"max_health": 2, "move_speed": 120.0, "nibble_damage": 1,
+		"cfg": {"max_health": 3, "move_speed": 120.0, "nibble_damage": 1,
 			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 12}
 	},
 	"scurrier": {
 		"scene": "rat",
-		"cfg": {"max_health": 1, "move_speed": 176.0, "nibble_damage": 1,
+		"cfg": {"max_health": 2, "move_speed": 176.0, "nibble_damage": 1,
 			"dash_chance": 0.82, "dash_cooldown_min": 0.7, "dash_cooldown_max": 1.4,
 			"tint": Color(0.72, 1.0, 0.55), "body_scale": 0.6, "score_value": 10}
 	},
 	"brute": {
 		"scene": "rat",
-		"cfg": {"max_health": 7, "move_speed": 74.0, "nibble_damage": 2,
+		"cfg": {"max_health": 6, "move_speed": 74.0, "nibble_damage": 2,
 			"nibble_range": 22.0, "dash_chance": 0.25, "knockback_resist": 0.6,
 			"tint": Color(1.0, 0.5, 0.42), "body_scale": 1.08, "score_value": 32}
 	},
@@ -36,13 +36,13 @@ var ROSTER := {
 	},
 	"spitter": {
 		"scene": "frog",
-		"cfg": {"max_health": 2, "move_speed": 104.0, "croak_cooldown": 1.2,
+		"cfg": {"max_health": 3, "move_speed": 104.0, "croak_cooldown": 1.2,
 			"croak_range": 56.0, "aoe_radius": 34.0, "croak_windup": 0.42,
 			"tint": Color(0.5, 0.82, 1.0), "body_scale": 0.7, "score_value": 22}
 	},
 	"boss": {
 		"scene": "rat",
-		"cfg": {"is_boss": true, "max_health": 96, "move_speed": 96.0,
+		"cfg": {"is_boss": true, "max_health": 50, "move_speed": 96.0,
 			"nibble_damage": 3, "nibble_range": 30.0, "nibble_interval": 0.55,
 			"dash_chance": 0.9, "dash_windup": 0.5, "dash_speed": 300.0,
 			"dash_cooldown_min": 1.0, "dash_cooldown_max": 1.8,
@@ -96,6 +96,18 @@ var boss_panel: Control
 var boss_fill: ColorRect
 var boss_bar_width: float = 160.0
 
+# Between-wave break shop
+var break_panel: Control
+var break_info: Label
+var break_status: Label
+var break_coins: Label
+var hp_button: Button
+var dash_button: Button
+var leer_button: Button
+var hp_buys: int = 0
+var dash_buys: int = 0
+var leer_buys: int = 0
+
 # --- Game feel ("juice") ---
 var cam: Camera2D
 var shake_amt: float = 0.0
@@ -119,6 +131,7 @@ func _ready() -> void:
 	_build_flash()
 	_build_boss_bar()
 	_build_shop_panel()
+	_build_break_panel()
 	_build_tutorial_panel()
 	var cat := get_tree().get_first_node_in_group("player")
 	if cat != null:
@@ -344,7 +357,10 @@ func _on_enemy_died(enemy: Node) -> void:
 	_on_style_event("enemy_down", 14)
 	if not cleared and not boss_active and _live_enemy_count() == 0:
 		_award_wave_clear()
-		call_deferred("_next_wave")
+		if wave_index + 1 >= waves.size():
+			call_deferred("_next_wave")
+		else:
+			call_deferred("_start_break")
 
 func _on_boss_died() -> void:
 	if cleared:
@@ -371,6 +387,155 @@ func _award_wave_clear() -> void:
 	style_meter += 16.0
 	no_glare_chain += 1
 	_set_reward("Wave clear +%d  Rank %s" % [bonus, _style_rank()])
+
+# --- Between-wave break & roguelite shop ------------------------------------
+
+func _wave_enemy_count(index: int) -> int:
+	if index < 0 or index >= waves.size():
+		return 0
+	var total := 0
+	for entry in waves[index]:
+		total += int(entry[1])
+	return total
+
+func _hp_cost() -> int:
+	return 40 + hp_buys * 30
+
+func _dash_cost() -> int:
+	return 55 + dash_buys * 40
+
+func _leer_cost() -> int:
+	return 50 + leer_buys * 40
+
+func _start_break() -> void:
+	if cleared:
+		return
+	var next_i := wave_index + 1
+	if _is_boss_wave(next_i):
+		break_info.text = "Catch your breath — the BOSS is next. Spend your coins!"
+	else:
+		break_info.text = "Nice clear! Chill a sec. Next wave: %d foes incoming." % _wave_enemy_count(next_i)
+	break_status.text = ""
+	_refresh_break()
+	break_panel.visible = true
+	get_tree().paused = true
+
+func _refresh_break() -> void:
+	break_coins.text = "Coins: %d" % coins
+	hp_button.text = "+2 MAX HP  (%d)" % _hp_cost()
+	dash_button.text = "DASH+ faster/longer/often  (%d)" % _dash_cost()
+	leer_button.text = "LEER+ stun/mark  (%d)" % _leer_cost()
+
+func _buy_health() -> void:
+	var cost := _hp_cost()
+	if coins < cost:
+		break_status.text = "Need %d more coins." % (cost - coins)
+		return
+	coins -= cost
+	hp_buys += 1
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat != null and cat.has_method("buy_health"):
+		cat.buy_health()
+	_save_profile_values()
+	break_status.text = "Max HP up!"
+	_refresh_break()
+	_refresh_hud()
+
+func _buy_dash() -> void:
+	var cost := _dash_cost()
+	if coins < cost:
+		break_status.text = "Need %d more coins." % (cost - coins)
+		return
+	coins -= cost
+	dash_buys += 1
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat != null and cat.has_method("upgrade_dash"):
+		cat.upgrade_dash()
+	_save_profile_values()
+	break_status.text = "Dash upgraded!"
+	_refresh_break()
+	_refresh_hud()
+
+func _buy_leer() -> void:
+	var cost := _leer_cost()
+	if coins < cost:
+		break_status.text = "Need %d more coins." % (cost - coins)
+		return
+	coins -= cost
+	leer_buys += 1
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat != null and cat.has_method("upgrade_leer"):
+		cat.upgrade_leer()
+	_save_profile_values()
+	break_status.text = "Leer upgraded!"
+	_refresh_break()
+	_refresh_hud()
+
+func _on_fight() -> void:
+	break_panel.visible = false
+	get_tree().paused = false
+	_begin_countdown()
+
+func _begin_countdown() -> void:
+	_hype("GET READY", Color(1.0, 0.85, 0.35))
+	await get_tree().create_timer(2.5).timeout
+	if not cleared:
+		_next_wave()
+
+func _build_break_panel() -> void:
+	break_panel = Control.new()
+	break_panel.name = "BreakPanel"
+	break_panel.visible = false
+	break_panel.process_mode = Node.PROCESS_MODE_ALWAYS
+	break_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.03, 0.06, 0.84)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	break_panel.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	break_panel.add_child(center)
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(228, 130)
+	box.add_theme_constant_override("separation", 1)
+	center.add_child(box)
+	var title := Label.new()
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 13)
+	title.add_theme_color_override("font_color", Color(0.5, 1.0, 0.85, 1))
+	title.text = "BREAK — CHILL OUT"
+	box.add_child(title)
+	break_info = Label.new()
+	break_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	break_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	break_info.custom_minimum_size = Vector2(228, 20)
+	break_info.add_theme_font_size_override("font_size", 8)
+	break_info.add_theme_color_override("font_color", Color(0.92, 0.9, 0.78, 1))
+	box.add_child(break_info)
+	break_coins = Label.new()
+	break_coins.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	break_coins.add_theme_font_size_override("font_size", 9)
+	break_coins.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35, 1))
+	box.add_child(break_coins)
+	hp_button = _make_button("HEALTH")
+	hp_button.pressed.connect(_buy_health)
+	box.add_child(hp_button)
+	dash_button = _make_button("DASH")
+	dash_button.pressed.connect(_buy_dash)
+	box.add_child(dash_button)
+	leer_button = _make_button("LEER")
+	leer_button.pressed.connect(_buy_leer)
+	box.add_child(leer_button)
+	break_status = Label.new()
+	break_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	break_status.custom_minimum_size = Vector2(228, 9)
+	break_status.add_theme_font_size_override("font_size", 8)
+	break_status.add_theme_color_override("font_color", Color(0.5, 0.95, 1.0, 1))
+	box.add_child(break_status)
+	var fight := _make_button("FIGHT ->")
+	fight.pressed.connect(_on_fight)
+	box.add_child(fight)
+	$UI.add_child(break_panel)
 
 func _level_cleared() -> void:
 	cleared = true
@@ -441,6 +606,11 @@ func _on_style_event(kind: String, amount: int) -> void:
 		_shake(0.7)
 	elif kind == "enemy_down":
 		_shake(0.9)
+	elif kind == "bite":
+		_shake(2.4)
+		_flash(Color(1.0, 0.9, 0.7), 0.22)
+	elif kind == "tail":
+		_shake(1.7)
 	var scored: int = maxi(1, int(amount * multiplier * 0.8))
 	score += scored
 	if kind == "paw_kill":
@@ -816,11 +986,11 @@ func _build_tutorial_panel() -> void:
 
 func _show_tutorial_step() -> void:
 	var steps := [
-		"Time stop. The swarm waits while you learn. Move with WASD or arrows and aim with the mouse.",
-		"Left click swipes the paw. Hits and kills build your STYLE rank, score, and coins fast.",
-		"Space dashes through danger and dodges hits. Chain kills without panicking to climb the ranks.",
-		"Dash the instant a foe flashes its attack tell (red or green wind-up) to FREEZE it solid.",
-		"Right click glares to stun a pack, but glare drops your style and trims the payout. Now go hunt.",
+		"Time stop. Move with WASD or arrows, aim with the mouse. LEFT CLICK = quick paw swipes.",
+		"RIGHT CLICK = heavy BITE. It roots you for a beat (you're open!), but one-shots small foes and makes them bleed.",
+		"HOLD RIGHT CLICK for a TAIL sweep that flings enemies away — clutch when you get swarmed.",
+		"Press E to LEER: stuns and MARKS a pack. Hit a marked foe to EXECUTE it for bonus style.",
+		"DASH (Space) INTO an enemy's attack tell to FREEZE it — a perfect parry. Spend coins between waves. Go hunt.",
 	]
 	tutorial_step = clampi(tutorial_step, 0, steps.size() - 1)
 	tutorial_text.text = steps[tutorial_step]

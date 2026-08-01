@@ -9,17 +9,37 @@ signal style_event(kind: String, amount: int)
 @export var dash_duration: float = 0.16
 @export var dash_cooldown: float = 0.30
 
-@export var paw_damage: int = 4
+# Light attack — paw swipe (left mouse). Low damage: basics take 2-3.
+@export var paw_damage: int = 1
 @export var paw_range: float = 42.0
 @export var paw_arc: float = -0.25
 @export var paw_cooldown: float = 0.18
-@export var paw_knockback: float = 190.0
+@export var paw_knockback: float = 150.0
 
-@export var glare_range: float = 92.0
-@export var glare_arc: float = 0.35
-@export var glare_stun: float = 0.35
-@export var glare_cooldown: float = 1.1
-@export var glare_show: float = 0.4
+# Heavy attack — bite (right mouse tap). Roots the cat for a beat, leaving it
+# vulnerable, but one-shots basics and makes them bleed.
+@export var bite_damage: int = 5
+@export var bite_range: float = 40.0
+@export var bite_arc: float = -0.1
+@export var bite_lock: float = 1.6
+@export var bite_knockback: float = 120.0
+@export var bite_bleed_dur: float = 5.0
+@export var bite_bleed_dps: float = 2.0
+
+# Tail sweep — hold right mouse. Big knockback, little damage.
+@export var tail_damage: int = 1
+@export var tail_range: float = 50.0
+@export var tail_arc: float = -0.4
+@export var tail_knockback: float = 420.0
+@export var tail_cooldown: float = 0.7
+@export var tail_hold_threshold: float = 0.32
+
+# Leer (E) — stun and mark a pack for execute setups.
+@export var leer_range: float = 92.0
+@export var leer_arc: float = 0.35
+@export var leer_stun: float = 0.35
+@export var leer_cooldown: float = 1.1
+@export var leer_show: float = 0.4
 
 @export var invuln_time: float = 0.55
 
@@ -36,8 +56,14 @@ var dash_time_left: float = 0.0
 var dash_cd_left: float = 0.0
 var dash_direction: Vector2 = Vector2.DOWN
 var paw_cd: float = 0.0
-var glare_cd: float = 0.0
+var leer_cd: float = 0.0
+var tail_cd: float = 0.0
 var invuln_timer: float = 0.0
+var bite_lock_timer: float = 0.0
+var rmb_down: bool = false
+var rmb_hold: float = 0.0
+var rmb_consumed: bool = false
+var mark_duration: float = 5.0
 var glare_level: int = 1
 
 func _ready() -> void:
@@ -58,13 +84,43 @@ func _physics_process(delta: float) -> void:
 
 	dash_cd_left = max(dash_cd_left - delta, 0.0)
 	paw_cd = max(paw_cd - delta, 0.0)
-	glare_cd = max(glare_cd - delta, 0.0)
+	leer_cd = max(leer_cd - delta, 0.0)
+	tail_cd = max(tail_cd - delta, 0.0)
 	invuln_timer = max(invuln_timer - delta, 0.0)
+	bite_lock_timer = max(bite_lock_timer - delta, 0.0)
+
+	# Committed to a bite: rooted and vulnerable until the lock ends.
+	if bite_lock_timer > 0.0:
+		velocity = Vector2.ZERO
+		move_and_slide()
+		_play("idle_" + _facing())
+		modulate = Color(1.0, 0.62, 0.62)
+		if Input.is_action_just_released("bite"):
+			rmb_down = false
+		return
 
 	if Input.is_action_just_pressed("paw") and paw_cd <= 0.0:
 		_paw()
-	if Input.is_action_just_pressed("glare") and glare_cd <= 0.0:
-		_glare()
+	if Input.is_action_just_pressed("leer") and leer_cd <= 0.0:
+		_leer()
+
+	# Right mouse: quick tap = bite, hold past the threshold = tail sweep.
+	if Input.is_action_just_pressed("bite"):
+		rmb_down = true
+		rmb_hold = 0.0
+		rmb_consumed = false
+	if rmb_down:
+		rmb_hold += delta
+		if not rmb_consumed and rmb_hold >= tail_hold_threshold:
+			rmb_consumed = true
+			if tail_cd <= 0.0:
+				_tail()
+	if Input.is_action_just_released("bite"):
+		var was_tap := rmb_down and not rmb_consumed
+		rmb_down = false
+		if was_tap:
+			_bite()
+			return
 
 	if is_dashing:
 		dash_time_left -= delta
@@ -127,7 +183,7 @@ func _paw() -> void:
 	paw_cd = paw_cooldown
 	var aim := _aim()
 	last_direction = aim
-	_show_slash(aim)
+	_show_slash(aim, 1.0)
 	var kills: int = 0
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e) or not e.has_method("take_damage"):
@@ -146,35 +202,78 @@ func _paw() -> void:
 	if kills >= 2:
 		style_event.emit("multi", kills)
 
-func _show_slash(aim: Vector2) -> void:
+# Heavy bite: roots the cat (bite_lock) and leaves it open, but hits hard and
+# inflicts bleeding — a big commitment that clears tough foes.
+func _bite() -> void:
+	bite_lock_timer = bite_lock
+	var aim := _aim()
+	last_direction = aim
+	invuln_timer = 0.0
+	_show_slash(aim, 1.55)
+	style_event.emit("bite", 8)
+	var kills: int = 0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(e) or not e.has_method("take_damage"):
+			continue
+		var to_e: Vector2 = e.global_position - global_position
+		if to_e.length() <= bite_range and aim.dot(to_e.normalized()) > bite_arc:
+			var marked: bool = e.has_method("is_marked") and e.is_marked()
+			var killed: bool = e.take_damage(bite_damage)
+			if not killed and e.has_method("bleed"):
+				e.bleed(bite_bleed_dur, bite_bleed_dps)
+			if killed:
+				kills += 1
+				style_event.emit("execute" if marked else "paw_kill", 36 if marked else 22)
+			if e.has_method("knockback"):
+				e.knockback(to_e.normalized() * bite_knockback)
+	if kills >= 2:
+		style_event.emit("multi", kills)
+
+# Tail sweep: launch everything in front away. Low damage, huge knockback.
+func _tail() -> void:
+	tail_cd = tail_cooldown
+	var aim := _aim()
+	last_direction = aim
+	_show_slash(aim, 1.25)
+	style_event.emit("tail", 5)
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(e) or not e.has_method("take_damage"):
+			continue
+		var to_e: Vector2 = e.global_position - global_position
+		if to_e.length() <= tail_range and aim.dot(to_e.normalized()) > tail_arc:
+			e.take_damage(tail_damage)
+			if e.has_method("knockback"):
+				e.knockback(to_e.normalized() * tail_knockback)
+
+func _show_slash(aim: Vector2, scale_mul: float) -> void:
 	slash.position = aim * 13.0
 	slash.rotation = aim.angle()
 	slash.flip_v = aim.x < 0.0
+	slash.scale = Vector2(0.62, 0.62) * scale_mul
 	slash.frame = 0
 	slash.visible = true
 	slash.play("slash")
 
-# LEER: stun and MARK a pack. Marked foes take double paw damage and detonate
-# into a satisfying EXECUTE when killed, turning glare into an offensive combo
-# setup instead of a panic button.
-func _glare() -> void:
-	glare_cd = glare_cooldown
+# LEER (E): stun and MARK a pack. Marked foes take double light damage and
+# detonate into an EXECUTE when killed — an offensive setup, not a panic button.
+func _leer() -> void:
+	leer_cd = leer_cooldown
 	var aim := _aim()
 	last_direction = aim
 	glare_eyes.visible = true
 	var t := create_tween()
-	t.tween_interval(glare_show)
+	t.tween_interval(leer_show)
 	t.tween_callback(func(): glare_eyes.visible = false)
 	style_event.emit("glare", -4)
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e):
 			continue
 		var to_e: Vector2 = e.global_position - global_position
-		if to_e.length() <= glare_range and aim.dot(to_e.normalized()) > glare_arc:
+		if to_e.length() <= leer_range and aim.dot(to_e.normalized()) > leer_arc:
 			if e.has_method("stun"):
-				e.stun(glare_stun)
+				e.stun(leer_stun)
 			if e.has_method("mark"):
-				e.mark(5.0)
+				e.mark(mark_duration)
 
 func _facing() -> String:
 	if abs(last_direction.x) >= abs(last_direction.y):
@@ -213,6 +312,25 @@ func die() -> void:
 	_play("idle_" + _facing())
 	died.emit()
 
+# --- Between-wave roguelite upgrades (applied by the level's break shop) ---
+
+func buy_health() -> void:
+	max_health += 2
+	health = mini(health + 2, max_health)
+	health_bar.max_value = max_health
+	health_bar.value = health
+
+func upgrade_dash() -> void:
+	dash_speed += 45.0
+	dash_duration = minf(dash_duration + 0.02, 0.4)
+	dash_cooldown = maxf(dash_cooldown - 0.04, 0.12)
+
+func upgrade_leer() -> void:
+	leer_stun += 0.15
+	mark_duration += 1.0
+	leer_range += 8.0
+	leer_cooldown = maxf(leer_cooldown - 0.12, 0.4)
+
 func _load_profile() -> void:
 	var config := ConfigFile.new()
 	var err := config.load("user://macatre_profile.cfg")
@@ -221,4 +339,4 @@ func _load_profile() -> void:
 		glare_level = int(config.get_value("shop", "glare_level", 1))
 	glare_level = clampi(glare_level, 1, 3)
 	var stuns := [0.35, 0.6, 0.85]
-	glare_stun = stuns[glare_level - 1]
+	leer_stun = stuns[glare_level - 1]

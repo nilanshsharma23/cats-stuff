@@ -49,6 +49,10 @@ var dash_hit_done: bool = false
 var parry_window: float = 0.0
 var frozen: bool = false
 var marked_timer: float = 0.0
+var bleed_timer: float = 0.0
+var bleed_accum: float = 0.0
+var bleed_dps: float = 0.0
+var attack_lock: float = 0.0
 
 func _ready() -> void:
     add_to_group("rats")
@@ -99,6 +103,24 @@ func mark(duration: float) -> void:
 func is_marked() -> bool:
     return marked_timer > 0.0 and not dead
 
+func bleed(duration: float, dps: float) -> void:
+    if dead:
+        return
+    bleed_timer = max(bleed_timer, duration)
+    bleed_dps = max(bleed_dps, dps)
+
+func _tick_bleed(delta: float) -> void:
+    if bleed_timer <= 0.0 or dead:
+        return
+    bleed_timer -= delta
+    bleed_accum += delta
+    if bleed_accum >= 0.5:
+        bleed_accum -= 0.5
+        health -= int(ceil(bleed_dps * 0.5))
+        if health <= 0:
+            health = 0
+            _die()
+
 func knockback(v: Vector2) -> void:
     if dead:
         return
@@ -118,6 +140,10 @@ func _physics_process(delta: float) -> void:
     attack_timer = max(attack_timer - delta, 0.0)
     parry_window = max(parry_window - delta, 0.0)
     marked_timer = max(marked_timer - delta, 0.0)
+    attack_lock = max(attack_lock - delta, 0.0)
+    _tick_bleed(delta)
+    if dead:
+        return
     queue_redraw()
 
     if knockback_timer > 0.0:
@@ -136,6 +162,7 @@ func _physics_process(delta: float) -> void:
         if stun_timer <= 0.0:
             modulate = Color.WHITE
             frozen = false
+            attack_lock = max(attack_lock, 1.0)
         return
     modulate = Color.WHITE
     frozen = false
@@ -182,10 +209,11 @@ func _physics_process(delta: float) -> void:
 
     if distance <= nibble_range:
         velocity = Vector2.ZERO
-        _try_nibble(direction)
+        if attack_lock <= 0.0:
+            _try_nibble(direction)
     else:
         velocity = direction * move_speed
-        if dash_timer <= 0.0:
+        if attack_lock <= 0.0 and dash_timer <= 0.0:
             dash_timer = randf_range(dash_cooldown_min, dash_cooldown_max)
             if randf() < dash_chance:
                 _begin_windup((player.global_position - global_position).normalized())
@@ -350,6 +378,14 @@ func _draw() -> void:
         _draw_frost()
     if is_marked():
         _draw_mark()
+    if bleed_timer > 0.0:
+        _draw_bleed()
+
+func _draw_bleed() -> void:
+    var col := Color(0.8, 0.05, 0.08, 0.85)
+    draw_circle(Vector2(-2, 3), 1.1, col)
+    draw_circle(Vector2(2.5, 5), 0.9, col)
+    draw_circle(Vector2(0, 6.5), 0.7, col)
 
 func _draw_frost() -> void:
     var col := Color(0.6, 0.92, 1.0, 0.9)
