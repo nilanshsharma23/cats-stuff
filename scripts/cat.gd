@@ -4,16 +4,16 @@ signal died
 signal style_event(kind: String, amount: int)
 
 @export var speed: int = 106
-@export var max_health: int = 9
-@export var dash_speed: float = 282.0
-@export var dash_duration: float = 0.14
-@export var dash_cooldown: float = 0.42
+@export var max_health: int = 8
+@export var dash_speed: float = 270.0
+@export var dash_duration: float = 0.13
+@export var dash_cooldown: float = 0.5
 
 # Light attack - paw swipe (left mouse). Low damage: basics take 2-3.
 @export var paw_damage: int = 1
-@export var paw_range: float = 39.0
+@export var paw_range: float = 37.0
 @export var paw_arc: float = -0.25
-@export var paw_cooldown: float = 0.26
+@export var paw_cooldown: float = 0.3
 @export var paw_knockback: float = 118.0
 
 # Heavy attack - bite (right mouse tap). Roots the cat for a beat, leaving it
@@ -22,7 +22,7 @@ signal style_event(kind: String, amount: int)
 @export var bite_range: float = 37.0
 @export var bite_arc: float = -0.1
 @export var bite_lock: float = 0.86
-@export var bite_cooldown: float = 2.1
+@export var bite_cooldown: float = 2.35
 @export var bite_knockback: float = 120.0
 @export var bite_bleed_dur: float = 5.0
 @export var bite_bleed_dps: float = 1.0
@@ -32,7 +32,7 @@ signal style_event(kind: String, amount: int)
 @export var tail_range: float = 47.0
 @export var tail_arc: float = -0.4
 @export var tail_knockback: float = 470.0
-@export var tail_cooldown: float = 1.15
+@export var tail_cooldown: float = 1.28
 @export var tail_hold_threshold: float = 0.32
 
 # Leer (E) - stun and mark a pack for execute setups.
@@ -42,7 +42,7 @@ signal style_event(kind: String, amount: int)
 @export var leer_cooldown: float = 5.8
 @export var leer_show: float = 0.5
 
-@export var invuln_time: float = 0.42
+@export var invuln_time: float = 0.34
 
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var health_bar: TextureProgressBar = $UI/Control/HealthBar

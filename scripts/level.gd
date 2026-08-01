@@ -18,52 +18,52 @@ const UI_FONT: FontFile = preload("res://fonts/Pixellari.ttf")
 var ROSTER := {
 	"rat": {
 		"scene": "rat",
-		"cfg": {"max_health": 4, "move_speed": 104.0, "nibble_damage": 1,
+		"cfg": {"max_health": 4, "move_speed": 112.0, "nibble_damage": 1,
 			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 16}
 	},
 	"scurrier": {
 		"scene": "rat",
-		"cfg": {"max_health": 3, "move_speed": 132.0, "nibble_damage": 1,
-			"dash_chance": 0.62, "dash_cooldown_min": 1.2, "dash_cooldown_max": 2.2,
+		"cfg": {"max_health": 3, "move_speed": 142.0, "nibble_damage": 1,
+			"dash_chance": 0.72, "dash_cooldown_min": 0.95, "dash_cooldown_max": 1.7,
 			"tint": Color(0.72, 1.0, 0.55), "body_scale": 0.6, "score_value": 14}
 	},
 	"brute": {
 		"scene": "rat",
-		"cfg": {"max_health": 7, "move_speed": 62.0, "nibble_damage": 1,
-			"nibble_range": 22.0, "dash_chance": 0.25, "knockback_resist": 0.6,
+		"cfg": {"max_health": 8, "move_speed": 68.0, "nibble_damage": 1,
+			"nibble_range": 23.0, "dash_chance": 0.36, "knockback_resist": 0.66,
 			"tint": Color(1.0, 0.5, 0.42), "body_scale": 1.08, "score_value": 42}
 	},
 	"frog": {
 		"scene": "frog",
-		"cfg": {"max_health": 4, "move_speed": 78.0, "aoe_damage": 1, "croak_cooldown": 2.55, "croak_range": 30.0, "bloodlust_speed_mul": 1.38,
+		"cfg": {"max_health": 5, "move_speed": 86.0, "aoe_damage": 1, "croak_cooldown": 2.1, "croak_range": 32.0, "bloodlust_speed_mul": 1.48,
 			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 24}
 	},
 	"spitter": {
 		"scene": "frog",
-		"cfg": {"max_health": 4, "move_speed": 82.0, "croak_cooldown": 1.9, "bloodlust_speed_mul": 1.18,
+		"cfg": {"max_health": 5, "move_speed": 90.0, "croak_cooldown": 1.55, "bloodlust_speed_mul": 1.28,
 			"croak_range": 54.0, "aoe_radius": 32.0, "croak_windup": 0.5,
 			"tint": Color(0.5, 0.82, 1.0), "body_scale": 0.7, "score_value": 30}
 	},
 	"boss": {
 		"scene": "rat",
-		"cfg": {"is_boss": true, "max_health": 54, "move_speed": 80.0,
+		"cfg": {"is_boss": true, "max_health": 64, "move_speed": 86.0,
 			"nibble_damage": 2, "nibble_range": 30.0, "nibble_interval": 0.55,
-			"dash_chance": 0.82, "dash_windup": 0.6, "dash_speed": 260.0,
+			"dash_chance": 0.9, "dash_windup": 0.52, "dash_speed": 286.0,
 			"dash_cooldown_min": 1.0, "dash_cooldown_max": 1.8,
 			"knockback_resist": 0.9, "tint": Color(0.85, 0.4, 1.0),
 			"body_scale": 2.3, "score_value": 600}
 	},
 	"frog_boss": {
 		"scene": "frog_boss",
-		"cfg": {"is_boss": true, "max_health": 72, "move_speed": 56.0,
-			"hop_damage": 2, "hop_knockback": 360.0, "hop_radius": 24.0,
+		"cfg": {"is_boss": true, "max_health": 84, "move_speed": 62.0,
+			"hop_damage": 2, "hop_knockback": 400.0, "hop_radius": 26.0,
 			"aoe_damage": 1, "aoe_radius": 56.0, "tint": Color(0.56, 1.0, 0.5, 1.0),
 			"body_scale": 1.65, "score_value": 760}
 	},
 	"pigeon_boss": {
 		"scene": "pigeon_boss",
-		"cfg": {"is_boss": true, "max_health": 86, "move_speed": 54.0,
-			"circle_radius": 34.0, "cross_width": 12.0, "circle_damage": 1,
+		"cfg": {"is_boss": true, "max_health": 104, "move_speed": 60.0,
+			"circle_radius": 36.0, "cross_width": 13.0, "circle_damage": 1,
 			"cross_damage": 1, "tint": Color(1.0, 1.0, 1.0, 1.0),
 			"body_scale": 0.14, "score_value": 900}
 	},
@@ -340,36 +340,36 @@ func _build_waves() -> void:
 		if tutorial_enabled:
 			waves = [
 				[["rat", 3]],
-				[["rat", 4], ["scurrier", 2]],
-				[["rat", 3], ["scurrier", 3], ["frog", 1]],
+				[["rat", 4], ["scurrier", 3]],
+				[["rat", 4], ["scurrier", 3], ["frog", 1]],
 			]
 		else:
 			waves = [
 				[["rat", 4]],
-				[["rat", 4], ["scurrier", 2]],
-				[["rat", 3], ["scurrier", 3], ["frog", 1]],
+				[["rat", 5], ["scurrier", 3]],
+				[["rat", 4], ["scurrier", 3], ["frog", 2]],
 			]
 		SoundManager.play_music(WAVE_MUSIC, 0, "Music")
 	elif level_id == 2:
 		waves = [
-			[["rat", 5], ["frog", 2]],
-			[["scurrier", 5], ["frog", 3]],
-			[["rat", 4], ["brute", 1], ["spitter", 2]],
-			[["boss", 1], ["scurrier", 3]],
+			[["rat", 6], ["frog", 2]],
+			[["scurrier", 6], ["frog", 3]],
+			[["rat", 5], ["brute", 2], ["spitter", 2]],
+			[["boss", 1], ["scurrier", 4], ["frog", 2]],
 		]
 		SoundManager.play_music(RAT_BOSS_1, 0, "Music")
 	elif level_id == 3:
 		waves = [
-			[["spitter", 3], ["frog", 4]],
-			[["brute", 2], ["scurrier", 5], ["spitter", 3]],
-			[["frog_boss", 1], ["frog", 2]],
+			[["spitter", 4], ["frog", 5]],
+			[["brute", 2], ["scurrier", 6], ["spitter", 4]],
+			[["frog_boss", 1], ["frog", 3], ["spitter", 2]],
 		]
 		SoundManager.play_music(FROG_BOSS_2, 0, "Music")
 	else:
 		waves = [
-			[["rat", 6], ["brute", 2], ["spitter", 3]],
-			[["scurrier", 7], ["frog", 3], ["spitter", 4]],
-			[["pigeon_boss", 1], ["scurrier", 3]],
+			[["rat", 7], ["brute", 3], ["spitter", 4]],
+			[["scurrier", 8], ["frog", 4], ["spitter", 5]],
+			[["pigeon_boss", 1], ["scurrier", 4], ["spitter", 2]],
 		]
 		SoundManager.play_music(PIGEON_BOSS_3, 0, "Music")
 
@@ -871,29 +871,53 @@ func _build_ability_bar() -> void:
 	ability_slots.clear()
 	ability_panel = HBoxContainer.new()
 	ability_panel.name = "AbilityBar"
-	ability_panel.position = Vector2(78, 122)
-	ability_panel.add_theme_constant_override("separation", 3)
+	ability_panel.position = Vector2(76, 117)
+	ability_panel.add_theme_constant_override("separation", 2)
 	$UI.add_child(ability_panel)
-	_add_ability_slot("PAW", "M1", Color(0.48, 1.0, 0.66, 0.95))
-	_add_ability_slot("DASH", "SP", Color(0.62, 0.9, 1.0, 0.95))
-	_add_ability_slot("JAW", "M2", Color(1.0, 0.45, 0.34, 0.95))
-	_add_ability_slot("TAIL", "H", Color(0.5, 0.78, 1.0, 0.95))
-	_add_ability_slot("GLARE", "E", Color(1.0, 0.28, 0.45, 0.95))
+	_add_ability_slot("PAW", "m1", Color(0.48, 1.0, 0.66, 0.95))
+	_add_ability_slot("DASH", "space", Color(0.62, 0.9, 1.0, 0.95))
+	_add_ability_slot("JAW", "m2", Color(1.0, 0.45, 0.34, 0.95))
+	_add_ability_slot("TAIL", "m2+", Color(0.5, 0.78, 1.0, 0.95))
+	_add_ability_slot("GLARE", "e", Color(1.0, 0.28, 0.45, 0.95))
+
+func _hex_points(size: Vector2) -> PackedVector2Array:
+	var w: float = size.x
+	var h: float = size.y
+	return PackedVector2Array([
+		Vector2(w * 0.25, 0.0),
+		Vector2(w * 0.75, 0.0),
+		Vector2(w, h * 0.5),
+		Vector2(w * 0.75, h),
+		Vector2(w * 0.25, h),
+		Vector2(0.0, h * 0.5),
+	])
 
 func _add_ability_slot(key: String, hint: String, color: Color) -> void:
 	var root := Control.new()
-	root.custom_minimum_size = Vector2(29, 15)
+	var slot_size := Vector2(34.0, 22.0)
+	root.custom_minimum_size = slot_size
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var bg := ColorRect.new()
-	bg.size = Vector2(29, 15)
-	bg.color = Color(0.025, 0.027, 0.038, 0.9)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var hex: PackedVector2Array = _hex_points(slot_size)
+	var shadow := Polygon2D.new()
+	shadow.position = Vector2(0.0, 1.0)
+	shadow.polygon = hex
+	shadow.color = Color(0.0, 0.0, 0.0, 0.48)
+	root.add_child(shadow)
+	var bg := Polygon2D.new()
+	bg.polygon = hex
+	bg.color = Color(0.018, 0.02, 0.03, 0.94)
 	root.add_child(bg)
-	var fill := ColorRect.new()
-	fill.size = Vector2(29, 15)
+	var fill := Polygon2D.new()
+	fill.polygon = hex
 	fill.color = color
-	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(fill)
+	var outline_points: PackedVector2Array = _hex_points(slot_size)
+	outline_points.append(outline_points[0])
+	var outline := Line2D.new()
+	outline.points = outline_points
+	outline.width = 1.15
+	outline.default_color = Color(0.95, 0.9, 0.72, 0.9)
+	root.add_child(outline)
 	var label := Label.new()
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -902,9 +926,9 @@ func _add_ability_slot(key: String, hint: String, color: Color) -> void:
 	label.add_theme_font_override("font", UI_FONT)
 	label.add_theme_font_size_override("font_size", 5)
 	label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 	label.add_theme_constant_override("outline_size", 2)
-	label.text = "%s %s" % [key, hint]
+	label.text = hint
 	root.add_child(label)
 	ability_panel.add_child(root)
 	ability_slots[key] = {"fill": fill, "label": label, "color": color, "hint": hint}
@@ -929,14 +953,13 @@ func _set_ability_slot(key: String, cd: float, max_cd: float) -> void:
 	if not ability_slots.has(key):
 		return
 	var slot: Dictionary = ability_slots[key]
-	var fill: ColorRect = slot["fill"]
+	var fill: Polygon2D = slot["fill"]
 	var label: Label = slot["label"]
-	var width: float = 29.0
 	var ready: bool = cd <= 0.05
 	var fill_ratio: float = 1.0 if ready else 1.0 - clampf(cd / maxf(max_cd, 0.01), 0.0, 1.0)
-	fill.size = Vector2(width * fill_ratio, 15.0)
-	fill.color = slot["color"] if ready else Color(0.18, 0.17, 0.2, 0.95)
-	label.text = "%s %s" % [key, String(slot["hint"])] if ready else "%.1fs" % cd
+	fill.scale = Vector2(fill_ratio, 1.0)
+	fill.color = slot["color"] if ready else Color(0.12, 0.12, 0.15, 0.96)
+	label.text = String(slot["hint"]) if ready else "%.1f" % cd
 
 func _hud_plate(title: String, pos: Vector2, box: Vector2, color: Color) -> ColorRect:
 	var plate := ColorRect.new()

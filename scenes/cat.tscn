@@ -7,8 +7,8 @@
 [ext_resource type="Texture2D" uid="uid://dnll1lcyf475i" path="res://sprites/health_bar.png" id="5_tol8a"]
 [ext_resource type="SpriteFrames" uid="uid://bcatslash01" path="res://sprites/cat_slash_frames.tres" id="6_slash"]
 [ext_resource type="Texture2D" uid="uid://cglareimport" path="res://sprites/glare.png" id="7_glare"]
-[ext_resource type="SpriteFrames" uid="uid://bcattailframes01" path="res://sprites/cat_tail_frames.tres" id="8_tail"]
-[ext_resource type="SpriteFrames" path="res://sprites/cat_bite_frames.tres" id="9_bite"]
+[ext_resource type="SpriteFrames" uid="uid://cotp8efqv5t5m" path="res://sprites/cat_tail_frames.tres" id="8_tail"]
+[ext_resource type="SpriteFrames" uid="uid://qi1oeid2g12w" path="res://sprites/cat_bite_frames.tres" id="9_bite"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_cat"]
 shader = ExtResource("3_shader")
@@ -39,7 +39,7 @@ scale = Vector2(0.62, 0.62)
 sprite_frames = ExtResource("6_slash")
 animation = &"slash"
 
-[node name="Bite" type="AnimatedSprite2D" parent="."]
+[node name="Bite" type="AnimatedSprite2D" parent="." unique_id=1458999276]
 visible = false
 z_index = 3
 scale = Vector2(0.86, 0.86)
