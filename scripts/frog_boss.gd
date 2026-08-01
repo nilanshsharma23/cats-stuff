@@ -6,10 +6,10 @@ signal died
 @export var max_health: int = 62
 @export var body_scale: float = 1.65
 @export var tint: Color = Color(0.56, 1.0, 0.5, 1.0)
-@export var hop_damage: int = 3
-@export var hop_knockback: float = 420.0
+@export var hop_damage: int = 2
+@export var hop_knockback: float = 360.0
 @export var hop_radius: float = 24.0
-@export var aoe_damage: int = 2
+@export var aoe_damage: int = 1
 @export var aoe_radius: float = 56.0
 @export var score_value: int = 760
 

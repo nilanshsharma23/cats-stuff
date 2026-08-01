@@ -27,7 +27,7 @@ var ROSTER := {
 	},
 	"brute": {
 		"scene": "rat",
-		"cfg": {"max_health": 6, "move_speed": 74.0, "nibble_damage": 2,
+		"cfg": {"max_health": 6, "move_speed": 74.0, "nibble_damage": 1,
 			"nibble_range": 22.0, "dash_chance": 0.25, "knockback_resist": 0.6,
 			"tint": Color(1.0, 0.5, 0.42), "body_scale": 1.08, "score_value": 32}
 	},
@@ -45,7 +45,7 @@ var ROSTER := {
 	"boss": {
 		"scene": "rat",
 		"cfg": {"is_boss": true, "max_health": 50, "move_speed": 96.0,
-			"nibble_damage": 3, "nibble_range": 30.0, "nibble_interval": 0.55,
+			"nibble_damage": 2, "nibble_range": 30.0, "nibble_interval": 0.55,
 			"dash_chance": 0.9, "dash_windup": 0.5, "dash_speed": 300.0,
 			"dash_cooldown_min": 1.0, "dash_cooldown_max": 1.8,
 			"knockback_resist": 0.9, "tint": Color(0.85, 0.4, 1.0),
@@ -54,14 +54,14 @@ var ROSTER := {
 	"frog_boss": {
 		"scene": "frog_boss",
 		"cfg": {"is_boss": true, "max_health": 62, "move_speed": 58.0,
-			"hop_damage": 3, "hop_knockback": 420.0, "hop_radius": 24.0,
-			"aoe_damage": 2, "aoe_radius": 56.0, "tint": Color(0.56, 1.0, 0.5, 1.0),
+			"hop_damage": 2, "hop_knockback": 360.0, "hop_radius": 24.0,
+			"aoe_damage": 1, "aoe_radius": 56.0, "tint": Color(0.56, 1.0, 0.5, 1.0),
 			"body_scale": 1.65, "score_value": 760}
 	},
 	"pigeon_boss": {
 		"scene": "pigeon_boss",
 		"cfg": {"is_boss": true, "max_health": 76, "move_speed": 62.0,
-			"circle_radius": 34.0, "cross_width": 12.0, "circle_damage": 2,
+			"circle_radius": 34.0, "cross_width": 12.0, "circle_damage": 1,
 			"cross_damage": 1, "tint": Color(1.0, 1.0, 1.0, 1.0),
 			"body_scale": 0.14, "score_value": 900}
 	},
@@ -280,30 +280,30 @@ func _build_waves() -> void:
 			]
 		else:
 			waves = [
-				[["rat", 5]],
-				[["rat", 5], ["scurrier", 4]],
-				[["rat", 4], ["scurrier", 5], ["frog", 2]],
+				[["rat", 6]],
+				[["rat", 6], ["scurrier", 5]],
+				[["rat", 5], ["scurrier", 6], ["frog", 2]],
 			]
 	elif level_id == 2:
 		waves = [
-			[["scurrier", 8], ["frog", 2]],
-			[["rat", 6], ["brute", 1], ["frog", 2]],
-			[["scurrier", 8], ["spitter", 3]],
-			[["rat", 6], ["brute", 2], ["spitter", 2]],
-			[["scurrier", 10], ["brute", 2], ["frog", 3]],
-			[["boss", 1], ["scurrier", 4]],
+			[["scurrier", 10], ["frog", 3]],
+			[["rat", 8], ["brute", 1], ["frog", 3]],
+			[["scurrier", 10], ["spitter", 4]],
+			[["rat", 8], ["brute", 2], ["spitter", 3]],
+			[["scurrier", 12], ["brute", 2], ["frog", 4]],
+			[["boss", 1], ["scurrier", 5]],
 		]
 	elif level_id == 3:
 		waves = [
-			[["spitter", 4], ["brute", 2]],
-			[["scurrier", 10], ["spitter", 4], ["frog", 2]],
-			[["frog_boss", 1], ["rat", 5]],
+			[["spitter", 5], ["brute", 2], ["scurrier", 4]],
+			[["scurrier", 12], ["spitter", 5], ["frog", 3]],
+			[["frog_boss", 1], ["rat", 7], ["scurrier", 3]],
 		]
 	else:
 		waves = [
-			[["rat", 8], ["brute", 3], ["spitter", 3]],
-			[["scurrier", 10], ["spitter", 4], ["frog", 3]],
-			[["pigeon_boss", 1], ["scurrier", 4]],
+			[["rat", 10], ["brute", 3], ["spitter", 4]],
+			[["scurrier", 12], ["spitter", 5], ["frog", 4]],
+			[["pigeon_boss", 1], ["scurrier", 6]],
 		]
 
 func _is_boss_wave(index: int) -> bool:
@@ -413,10 +413,16 @@ func _on_enemy_died(enemy: Node) -> void:
 	_on_style_event("enemy_down", 14)
 	if not cleared and not boss_active and _live_enemy_count() == 0:
 		_award_wave_clear()
-		if wave_index + 1 >= waves.size():
-			call_deferred("_next_wave")
-		else:
-			call_deferred("_start_break")
+		call_deferred("_finish_wave_after_delay")
+
+func _finish_wave_after_delay() -> void:
+	await get_tree().create_timer(2.0).timeout
+	if cleared or boss_active or _live_enemy_count() > 0:
+		return
+	if wave_index + 1 >= waves.size():
+		_next_wave()
+	else:
+		_start_break()
 
 func _on_boss_died(boss: Node = null) -> void:
 	if cleared:

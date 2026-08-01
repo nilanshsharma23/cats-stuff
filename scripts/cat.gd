@@ -18,13 +18,13 @@ signal style_event(kind: String, amount: int)
 
 # Heavy attack - bite (right mouse tap). Roots the cat for a beat, leaving it
 # vulnerable, but one-shots basics and makes them bleed.
-@export var bite_damage: int = 5
+@export var bite_damage: int = 3
 @export var bite_range: float = 40.0
 @export var bite_arc: float = -0.1
-@export var bite_lock: float = 1.6
+@export var bite_lock: float = 0.95
 @export var bite_knockback: float = 120.0
 @export var bite_bleed_dur: float = 5.0
-@export var bite_bleed_dps: float = 2.0
+@export var bite_bleed_dps: float = 1.5
 
 # Tail sweep - hold right mouse. Big knockback, little damage.
 @export var tail_damage: int = 1

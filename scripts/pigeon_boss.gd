@@ -9,7 +9,7 @@ signal died
 @export var ghost_tint: Color = Color(0.78, 0.62, 1.0, 0.72)
 @export var circle_radius: float = 34.0
 @export var cross_width: float = 12.0
-@export var circle_damage: int = 2
+@export var circle_damage: int = 1
 @export var cross_damage: int = 1
 @export var score_value: int = 900
 
@@ -21,10 +21,10 @@ const ARENA_MAX := Vector2(228, 120)
 const FRAME_TIME := 0.09
 
 var frames: Array[Texture2D] = [
-	preload("res://sprites/bird-1.png"),
-	preload("res://sprites/bird-2.png"),
-	preload("res://sprites/bird-3.png"),
-	preload("res://sprites/bird-4.png"),
+	preload("res://sprites/pigeon-1.png"),
+	preload("res://sprites/pigeon-2.png"),
+	preload("res://sprites/pigeon-3.png"),
+	preload("res://sprites/pigeon-4.png"),
 ]
 
 var boss_name: String = "THE WIND WRAITH"
