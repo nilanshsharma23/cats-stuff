@@ -4,6 +4,17 @@ const UI_FONT: FontFile = preload("res://fonts/Pixellari.ttf")
 const SPAWN_MARKER: GDScript = preload("res://scripts/spawn_marker.gd")
 const PICKUP: GDScript = preload("res://scripts/pickup.gd")
 const VIGNETTE: GDScript = preload("res://scripts/vignette.gd")
+const NEON_SHADER: Shader = preload("res://shaders/neon.gdshader")
+const PLAN_MARKER: GDScript = preload("res://scripts/plan_marker.gd")
+
+# --- OVERDRIVE: the boss-only ultimate --------------------------------------
+#
+# Costs a full SS style meter and only exists during a boss fight. Stops the
+# world for PLAN_SECONDS while the player choreographs a combo, then replays it
+# for real in EXEC_SECONDS. The whole arena grades to neon while it runs.
+const PLAN_SECONDS: float = 5.0
+const EXEC_SECONDS: float = 1.5
+const ULT_STYLE_COST: float = 560.0
 
 @export var level_id: int = 1
 @export var next_level_path: String = ""
@@ -155,6 +166,13 @@ var score_panel: ColorRect
 var danger_vignette: Control
 var style_bar_bg: ColorRect
 var style_bar_fill: ColorRect
+var neon_rect: ColorRect
+var neon_mat: ShaderMaterial
+var ult_label: Label
+var ult_state: String = ""
+var ult_timer: float = 0.0
+var ult_frozen: Array = []
+var ult_markers: Array = []
 var pause_panel: Control
 var pause_resume: Button
 var pause_retry: Button
@@ -218,6 +236,7 @@ func _ready() -> void:
 	_build_hud()
 	_build_ability_bar()
 	_build_vignette()
+	_build_neon()
 	_build_flash()
 	_build_boss_bar()
 	_build_shop_panel()
@@ -255,6 +274,12 @@ func _process(delta: float) -> void:
 		reward_label.modulate.a = clamp(reward_timer, 0.0, 1.0)
 	else:
 		reward_label.modulate.a = 0.0
+	if Input.is_action_just_pressed("ultimate") and _can_ultimate():
+		_start_ultimate()
+	if ult_state == "plan":
+		# Keep re-freezing so stragglers arriving mid-plan are caught too.
+		_freeze_world(true)
+	_tick_ultimate(delta)
 	_tick_tutorial(delta)
 	_update_shake(delta)
 	_update_boss_bar()
@@ -323,6 +348,168 @@ func _setup_camera() -> void:
 	cam.zoom = Vector2(1.04, 1.04)
 	add_child(cam)
 	cam.make_current()
+
+# --- OVERDRIVE ---------------------------------------------------------------
+
+func _build_neon() -> void:
+	# First child of the UI layer: it reads the screen *before* the HUD is drawn,
+	# so the arena grades to neon while the HUD stays legible on top.
+	neon_mat = ShaderMaterial.new()
+	neon_mat.shader = NEON_SHADER
+	neon_mat.set_shader_parameter("amount", 0.0)
+	neon_mat.set_shader_parameter("surge", 0.0)
+	neon_rect = ColorRect.new()
+	neon_rect.name = "NeonGrade"
+	neon_rect.material = neon_mat
+	neon_rect.color = Color(1, 1, 1, 1)
+	neon_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	neon_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	neon_rect.visible = false
+	neon_rect.process_mode = Node.PROCESS_MODE_ALWAYS
+	$UI.add_child(neon_rect)
+	$UI.move_child(neon_rect, 0)
+
+	ult_label = Label.new()
+	ult_label.name = "UltLabel"
+	ult_label.visible = false
+	ult_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ult_label.position = Vector2(48, 24)
+	ult_label.size = Vector2(160, 20)
+	ult_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ult_label.add_theme_font_override("font", UI_FONT)
+	ult_label.add_theme_font_size_override("font_size", 9)
+	ult_label.add_theme_color_override("font_color", Color(1.0, 0.4, 1.0, 1.0))
+	ult_label.add_theme_color_override("font_outline_color", Color(0.05, 0, 0.1, 1.0))
+	ult_label.add_theme_constant_override("outline_size", 4)
+	$UI.add_child(ult_label)
+
+# Available only against a live boss, at a full SS meter, once per meter.
+func _can_ultimate() -> bool:
+	if ult_state != "" or cleared or tutorial_active or get_tree().paused:
+		return false
+	if not boss_active:
+		return false
+	var boss := get_tree().get_first_node_in_group("boss")
+	if boss == null or not is_instance_valid(boss):
+		return false
+	if style_meter < ULT_STYLE_COST:
+		return false
+	var cat := get_tree().get_first_node_in_group("player")
+	return cat != null and is_instance_valid(cat) and not bool(cat.get("dead"))
+
+func _start_ultimate() -> void:
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat == null or not cat.has_method("begin_plan"):
+		return
+	ult_state = "plan"
+	ult_timer = PLAN_SECONDS
+	# Spending the meter is the cost - you drop straight back to D rank.
+	style_meter = 0.0
+	style_timeout = 0.0
+	hitstop_id += 1
+	Engine.time_scale = 1.0
+	_freeze_world(true)
+	if not cat.plan_action_queued.is_connected(_on_plan_action_queued):
+		cat.plan_action_queued.connect(_on_plan_action_queued)
+	cat.begin_plan()
+	neon_rect.visible = true
+	neon_mat.set_shader_parameter("surge", 0.0)
+	var t := create_tween()
+	t.tween_method(_set_neon_amount, 0.0, 1.0, 0.22)
+	ult_label.visible = true
+	_hype("OVERDRIVE", Color(1.0, 0.35, 1.0))
+	_shake(3.0)
+	SoundManager.set_music_volume(0.22)
+
+func _set_neon_amount(value: float) -> void:
+	if neon_mat != null:
+		neon_mat.set_shader_parameter("amount", value)
+
+func _on_plan_action_queued(at: Vector2, kind: String) -> void:
+	var marker: Node2D = PLAN_MARKER.new()
+	marker.kind = kind
+	marker.index = ult_markers.size() + 1
+	marker.position = at
+	add_child(marker)
+	ult_markers.append(marker)
+	_shake(0.6)
+
+func _tick_ultimate(delta: float) -> void:
+	if ult_state == "":
+		return
+	var cat := get_tree().get_first_node_in_group("player")
+	ult_timer -= delta
+	if ult_state == "plan":
+		var queued: int = int(cat.call("planned_count")) if cat != null and is_instance_valid(cat) else 0
+		ult_label.text = "PLAN  %.1fs\n%d / %d QUEUED" % [maxf(ult_timer, 0.0), queued, 14]
+		# End early once the queue is full - no reason to make the player wait.
+		if ult_timer <= 0.0 or (cat != null and bool(cat.call("plan_full"))):
+			_begin_ultimate_execution()
+		return
+	if ult_state == "exec":
+		ult_label.text = "EXECUTE"
+		if ult_timer <= 0.0:
+			_end_ultimate()
+
+func _begin_ultimate_execution() -> void:
+	var cat := get_tree().get_first_node_in_group("player")
+	ult_state = "exec"
+	ult_timer = EXEC_SECONDS
+	_clear_plan_markers()
+	# Swap the hard process freeze for each enemy's own freeze state: they still
+	# cannot act, but their hit reactions and death animations play out.
+	_freeze_world(false)
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e) and e.has_method("freeze"):
+			e.freeze(EXEC_SECONDS + 0.6)
+	neon_mat.set_shader_parameter("surge", 1.0)
+	_flash(Color(1.0, 0.4, 1.0), 0.6)
+	_shake(4.0)
+	_hype("EXECUTE", Color(1.0, 0.3, 0.9))
+	if cat == null or not cat.has_method("run_execution") or not bool(cat.call("run_execution", EXEC_SECONDS)):
+		_end_ultimate()
+
+func _end_ultimate() -> void:
+	if ult_state == "":
+		return
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat != null and is_instance_valid(cat) and cat.has_method("cancel_overdrive"):
+		cat.cancel_overdrive()
+	ult_state = ""
+	ult_timer = 0.0
+	_clear_plan_markers()
+	_freeze_world(false)
+	ult_label.visible = false
+	neon_mat.set_shader_parameter("surge", 0.0)
+	var t := create_tween()
+	t.tween_method(_set_neon_amount, 1.0, 0.0, 0.35)
+	t.tween_callback(func():
+		if neon_rect != null:
+			neon_rect.visible = false)
+	SoundManager.set_music_volume(0.5)
+	_set_reward("Overdrive spent. Build it again.")
+
+# Hard freeze: disabling processing stops enemies dead, tells and all, which is
+# exactly the "time stopped" read the planning phase needs. Re-applied every
+# frame so anything that spawns mid-plan is caught too.
+func _freeze_world(on: bool) -> void:
+	if on:
+		for e in get_tree().get_nodes_in_group("enemies"):
+			if is_instance_valid(e):
+				e.process_mode = Node.PROCESS_MODE_DISABLED
+				if not ult_frozen.has(e):
+					ult_frozen.append(e)
+		return
+	for e in ult_frozen:
+		if is_instance_valid(e):
+			e.process_mode = Node.PROCESS_MODE_PAUSABLE
+	ult_frozen.clear()
+
+func _clear_plan_markers() -> void:
+	for m in ult_markers:
+		if is_instance_valid(m):
+			m.queue_free()
+	ult_markers.clear()
 
 func _build_vignette() -> void:
 	danger_vignette = VIGNETTE.new()
@@ -975,7 +1162,8 @@ func _input(event: InputEvent) -> void:
 		get_tree().reload_current_scene()
 
 func _toggle_pause() -> void:
-	if cleared or game_over.visible or break_panel.visible or shop_panel.visible:
+	# Pausing mid-Overdrive would strand the freeze and the colour grade.
+	if cleared or game_over.visible or break_panel.visible or shop_panel.visible or ult_state != "":
 		return
 	var paused := not get_tree().paused
 	get_tree().paused = paused
@@ -1164,16 +1352,17 @@ func _build_ability_bar() -> void:
 	ability_slots.clear()
 	ability_panel = HBoxContainer.new()
 	ability_panel.name = "AbilityBar"
-	# Sits to the right of the player card along the bottom edge, clear of the
-	# health bar. 5 slots x 28 + 4 gaps x 2 = 148px, ending just shy of x256.
-	ability_panel.position = Vector2(106, 117)
+	# Bottom edge, right of the player card and clear of the health bar.
+	# 6 slots x 24 + 5 gaps x 2 = 154px, ending just shy of x256.
+	ability_panel.position = Vector2(100, 117)
 	ability_panel.add_theme_constant_override("separation", 2)
 	$UI.add_child(ability_panel)
 	_add_ability_slot("PAW", "m1", Color(0.48, 1.0, 0.66, 0.95))
-	_add_ability_slot("DASH", "space", Color(0.62, 0.9, 1.0, 0.95))
+	_add_ability_slot("DASH", "spc", Color(0.62, 0.9, 1.0, 0.95))
 	_add_ability_slot("JAW", "m2", Color(1.0, 0.45, 0.34, 0.95))
 	_add_ability_slot("TAIL", "m2+", Color(0.5, 0.78, 1.0, 0.95))
 	_add_ability_slot("GLARE", "e", Color(1.0, 0.28, 0.45, 0.95))
+	_add_ability_slot("ULT", "q", Color(1.0, 0.35, 1.0, 0.95))
 
 func _hex_points(size: Vector2) -> PackedVector2Array:
 	var w: float = size.x
@@ -1189,7 +1378,7 @@ func _hex_points(size: Vector2) -> PackedVector2Array:
 
 func _add_ability_slot(key: String, hint: String, color: Color) -> void:
 	var root := Control.new()
-	var slot_size := Vector2(28.0, 22.0)
+	var slot_size := Vector2(24.0, 20.0)
 	root.custom_minimum_size = slot_size
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var hex: PackedVector2Array = _hex_points(slot_size)
@@ -1243,6 +1432,31 @@ func _update_ability_bar() -> void:
 	_set_ability_slot("JAW", bite_cd, bite_max)
 	_set_ability_slot("TAIL", float(cat.get("tail_cd")), float(cat.get("tail_cooldown")))
 	_set_ability_slot("GLARE", float(cat.get("leer_cd")), float(cat.get("leer_cooldown")))
+	_update_ult_slot()
+
+# The ultimate has no cooldown - it is gated on being in a boss fight with a
+# full SS meter, so the slot fills with the meter and only lights up when the
+# whole thing is actually available.
+func _update_ult_slot() -> void:
+	if not ability_slots.has("ULT"):
+		return
+	var slot: Dictionary = ability_slots["ULT"]
+	var fill: Polygon2D = slot["fill"]
+	var label: Label = slot["label"]
+	var ready: bool = _can_ultimate()
+	var charge: float = clampf(style_meter / ULT_STYLE_COST, 0.0, 1.0)
+	fill.scale = Vector2(charge, 1.0)
+	if ready:
+		# Pulse so a live ultimate is impossible to miss.
+		var pulse: float = 0.72 + 0.28 * sin(Time.get_ticks_msec() * 0.012)
+		fill.color = Color(1.0, 0.35 * pulse, 1.0, 0.95)
+		label.text = "q"
+	elif ult_state != "":
+		fill.color = Color(1.0, 0.35, 1.0, 0.95)
+		label.text = "ON"
+	else:
+		fill.color = Color(0.35, 0.1, 0.4, 0.96)
+		label.text = "q" if charge >= 1.0 else "%d%%" % int(charge * 100.0)
 
 func _set_ability_slot(key: String, cd: float, max_cd: float) -> void:
 	if not ability_slots.has(key):
@@ -1439,6 +1653,11 @@ func _build_result_panel() -> void:
 func _finish_run(title: String, success: bool) -> void:
 	hitstop_id += 1
 	Engine.time_scale = 1.0
+	# Killing the boss with the Overdrive combo ends the run mid-execution, and
+	# _process stops once the tree is paused - so tear the ultimate down here or
+	# the freeze, the neon grade and the ducked music all stay stuck on.
+	_end_ultimate()
+	SoundManager.set_music_volume(0.5)
 	_bank_run()
 	_hide_hud()
 	result_title.text = title

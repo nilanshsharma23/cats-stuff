@@ -81,6 +81,29 @@ var external_knockback: Vector2 = Vector2.ZERO
 var external_knockback_timer: float = 0.0
 var glare_tween: Tween
 
+# --- OVERDRIVE (the boss-only ultimate) -------------------------------------
+#
+# Two phases. While `planning`, the cat plays normally but every attack is
+# RECORDED instead of resolved - nothing takes damage, and a breadcrumb of her
+# position is sampled each frame. While `executing`, that recording is replayed
+# at ~3.3x speed and the attacks land for real, all at once.
+signal plan_action_queued(at: Vector2, kind: String)
+
+const PLAN_ACTION_CAP: int = 14
+const OVERDRIVE_DAMAGE_MUL: float = 1.5
+
+var planning: bool = false
+var executing: bool = false
+var plan_time: float = 0.0
+var plan_path: Array = []
+var plan_actions: Array = []
+var exec_time: float = 0.0
+var exec_duration: float = 1.5
+var exec_scale: float = 1.0
+var exec_next: int = 0
+var exec_path_index: int = 0
+var afterimage_cd: float = 0.0
+
 const CAT_DASH = preload("uid://capfj5y587nhw")
 const CAT_PARRY = preload("uid://igm67v3h80mk")
 const CAT_DIE = preload("uid://dlkb61t56j13g")
@@ -110,6 +133,15 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
+	# Replaying a plan takes the cat off player control entirely.
+	if executing:
+		_run_execution(delta)
+		return
+
+	if planning:
+		plan_time += delta
+		plan_path.append({"t": plan_time, "pos": global_position, "dir": last_direction})
+
 	dash_cd_left = max(dash_cd_left - delta, 0.0)
 	paw_cd = max(paw_cd - delta, 0.0)
 	bite_cd_left = max(bite_cd_left - delta, 0.0)
@@ -136,9 +168,9 @@ func _physics_process(delta: float) -> void:
 			rmb_down = false
 		return
 
-	if Input.is_action_just_pressed("paw") and paw_cd <= 0.0:
+	if Input.is_action_just_pressed("paw") and paw_cd <= 0.0 and not plan_full():
 		_paw()
-	if Input.is_action_just_pressed("leer") and leer_cd <= 0.0:
+	if Input.is_action_just_pressed("leer") and leer_cd <= 0.0 and not plan_full():
 		_leer()
 
 	# Right mouse: quick tap = bite, hold past the threshold = tail sweep.
@@ -150,12 +182,12 @@ func _physics_process(delta: float) -> void:
 		rmb_hold += delta
 		if not rmb_consumed and rmb_hold >= tail_hold_threshold:
 			rmb_consumed = true
-			if tail_cd <= 0.0:
+			if tail_cd <= 0.0 and not plan_full():
 				_tail()
 	if Input.is_action_just_released("bite"):
 		var was_tap := rmb_down and not rmb_consumed
 		rmb_down = false
-		if was_tap and bite_cd_left <= 0.0:
+		if was_tap and bite_cd_left <= 0.0 and not plan_full():
 			_bite()
 			return
 
@@ -195,7 +227,9 @@ func _physics_process(delta: float) -> void:
 		_set_flash(true)
 		return
 
-	modulate = Color.WHITE if invuln_timer <= 0.0 else Color(1, 1, 1, 0.6)
+	# Planning grants blanket invulnerability, but the cat must stay fully opaque
+	# through it - she is the one thing you need to read while setting up.
+	modulate = Color.WHITE if (invuln_timer <= 0.0 or planning) else Color(1, 1, 1, 0.6)
 
 	velocity = input_direction * speed
 	move_and_slide()
@@ -204,6 +238,136 @@ func _physics_process(delta: float) -> void:
 		_play("walk_" + _facing())
 	else:
 		_play("idle_" + _facing())
+
+# --- OVERDRIVE control surface (driven by the level) ------------------------
+
+func begin_plan() -> void:
+	planning = true
+	executing = false
+	plan_time = 0.0
+	plan_path.clear()
+	plan_actions.clear()
+	# You enter Overdrive with everything off cooldown, but cooldowns still TICK
+	# during planning. Letting the player queue 14 free jaws would out-damage
+	# every boss in the game and make the rest of the kit irrelevant; keeping the
+	# normal economy means Overdrive is a perfect five seconds of your real kit,
+	# landing all at once and unanswerable, rather than a separate better kit.
+	paw_cd = 0.0
+	bite_cd_left = 0.0
+	tail_cd = 0.0
+	leer_cd = 0.0
+	dash_cd_left = 0.0
+	bite_lock_timer = 0.0
+	invuln_timer = 999.0
+
+func plan_full() -> bool:
+	return plan_actions.size() >= PLAN_ACTION_CAP
+
+func planned_count() -> int:
+	return plan_actions.size()
+
+func end_plan() -> void:
+	planning = false
+
+# Hard stop, used when a run ends mid-Overdrive (killing the boss with the combo
+# is the likeliest way to get here). Leaves the cat in a clean, controllable
+# state no matter which phase was interrupted.
+func cancel_overdrive() -> void:
+	planning = false
+	if executing:
+		_finish_execution()
+	plan_path.clear()
+	plan_actions.clear()
+
+# Replay the recording over `duration` seconds. Returns false when nothing was
+# queued, so the level can skip straight to the cleanup.
+func run_execution(duration: float) -> bool:
+	planning = false
+	if plan_actions.is_empty():
+		invuln_timer = invuln_time
+		return false
+	executing = true
+	exec_duration = maxf(duration, 0.1)
+	exec_time = 0.0
+	exec_scale = maxf(plan_time, 0.01) / exec_duration
+	exec_next = 0
+	exec_path_index = 0
+	afterimage_cd = 0.0
+	invuln_timer = exec_duration + 0.35
+	return true
+
+func _run_execution(delta: float) -> void:
+	exec_time += delta
+	afterimage_cd -= delta
+	var plan_t: float = exec_time * exec_scale
+	_seek_plan_path(plan_t)
+	if afterimage_cd <= 0.0:
+		afterimage_cd = 0.035
+		_spawn_afterimage()
+	# Fire every action whose recorded moment has now passed.
+	while exec_next < plan_actions.size() and float(plan_actions[exec_next]["t"]) <= plan_t:
+		var action: Dictionary = plan_actions[exec_next]
+		exec_next += 1
+		global_position = action["pos"]
+		last_direction = action["aim"]
+		_perform(String(action["kind"]), action["aim"], true)
+	if exec_time >= exec_duration:
+		_finish_execution()
+
+func _seek_plan_path(plan_t: float) -> void:
+	while exec_path_index < plan_path.size() - 1 and float(plan_path[exec_path_index]["t"]) < plan_t:
+		exec_path_index += 1
+	if exec_path_index < plan_path.size():
+		var sample: Dictionary = plan_path[exec_path_index]
+		global_position = sample["pos"]
+		last_direction = sample["dir"]
+	_play("run_" + _facing())
+
+func _finish_execution() -> void:
+	executing = false
+	plan_path.clear()
+	plan_actions.clear()
+	invuln_timer = maxf(invuln_timer, 0.4)
+	_set_flash(false)
+	modulate = Color.WHITE
+
+# Streaked copies of the current frame left behind during the replay - the whole
+# point of the ultimate is watching the combo land at once.
+func _spawn_afterimage() -> void:
+	var frames := anim.sprite_frames
+	if frames == null or not frames.has_animation(anim.animation):
+		return
+	var ghost := Sprite2D.new()
+	ghost.texture = frames.get_frame_texture(anim.animation, anim.frame)
+	ghost.global_position = global_position
+	ghost.scale = anim.scale
+	ghost.flip_h = anim.flip_h
+	ghost.z_index = 1
+	ghost.modulate = Color(1.0, 0.35, 1.0, 0.75)
+	get_parent().add_child(ghost)
+	var t := ghost.create_tween()
+	t.tween_property(ghost, "modulate:a", 0.0, 0.28)
+	t.parallel().tween_property(ghost, "scale", anim.scale * 1.2, 0.28)
+	t.tween_callback(ghost.queue_free)
+
+# Single entry point for "do an attack". During planning it records instead of
+# resolving, so the recorded list and the live behaviour can never drift apart.
+func _perform(kind: String, aim: Vector2, for_real: bool) -> void:
+	match kind:
+		"paw":
+			_resolve_paw(aim, for_real)
+		"bite":
+			_resolve_bite(aim, for_real)
+		"tail":
+			_resolve_tail(aim, for_real)
+		"leer":
+			_resolve_leer(aim, for_real)
+
+func _record(kind: String, aim: Vector2) -> void:
+	if plan_actions.size() >= PLAN_ACTION_CAP:
+		return
+	plan_actions.append({"t": plan_time, "kind": kind, "aim": aim, "pos": global_position})
+	plan_action_queued.emit(global_position + aim * 16.0, kind)
 
 # Sekiro-style deflect: you must dash INTO an enemy during the last beat of its
 # wind-up (see each enemy's is_parryable) to freeze it. Dodging away never
@@ -237,7 +401,16 @@ func _paw() -> void:
 	paw_cd = paw_cooldown
 	var aim := _aim()
 	last_direction = aim
+	if planning:
+		_show_slash(aim, 1.0)
+		_record("paw", aim)
+		return
+	_resolve_paw(aim, true)
+
+func _resolve_paw(aim: Vector2, for_real: bool) -> void:
 	_show_slash(aim, 1.0)
+	if not for_real:
+		return
 	var kills: int = 0
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e) or not e.has_method("take_damage"):
@@ -259,11 +432,22 @@ func _paw() -> void:
 # Heavy bite: roots the cat (bite_lock) and leaves it open, but hits hard and
 # inflicts bleeding - a big commitment that clears tough foes.
 func _bite() -> void:
-	bite_lock_timer = bite_lock
-	bite_cd_left = bite_cooldown
 	var aim := _aim()
 	last_direction = aim
+	bite_cd_left = bite_cooldown
+	if planning:
+		# The cooldown still applies (it is what stops a wall of free jaws), but
+		# not the root - being pinned in place means nothing while time is stopped.
+		_show_bite(aim)
+		_record("bite", aim)
+		return
+	bite_lock_timer = bite_lock
+	_resolve_bite(aim, true)
+
+func _resolve_bite(aim: Vector2, for_real: bool) -> void:
 	_show_bite(aim)
+	if not for_real:
+		return
 	style_event.emit("bite", 8)
 	var kills: int = 0
 	for e in get_tree().get_nodes_in_group("enemies"):
@@ -289,7 +473,16 @@ func _tail() -> void:
 	tail_cd = tail_cooldown
 	var aim := _aim()
 	last_direction = aim
+	if planning:
+		_show_tail_sweep(aim)
+		_record("tail", aim)
+		return
+	_resolve_tail(aim, true)
+
+func _resolve_tail(aim: Vector2, for_real: bool) -> void:
 	_show_tail_sweep(aim)
+	if not for_real:
+		return
 	style_event.emit("tail", 5)
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e) or not e.has_method("take_damage"):
@@ -323,6 +516,10 @@ func _damage_for(enemy: Node, move: String, base_damage: int, marked: bool) -> i
 			damage = 4
 	if marked:
 		damage += 2 if move == "paw" else 1
+	# The replayed combo hits harder than the sum of its parts - that is what
+	# makes spending a full SS meter on it worth doing.
+	if executing:
+		damage = int(round(float(damage) * OVERDRIVE_DAMAGE_MUL))
 	return max(1, damage)
 
 func _show_slash(aim: Vector2, scale_mul: float) -> void:
@@ -358,6 +555,28 @@ func _leer() -> void:
 	leer_cd = leer_cooldown
 	var aim := _aim()
 	last_direction = aim
+	if planning:
+		_show_leer_fx(aim)
+		_record("leer", aim)
+		return
+	_resolve_leer(aim, true)
+
+func _resolve_leer(aim: Vector2, for_real: bool) -> void:
+	_show_leer_fx(aim)
+	if not for_real:
+		return
+	style_event.emit("glare", 0)
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(e):
+			continue
+		var to_e: Vector2 = e.global_position - global_position
+		if to_e.length() <= leer_range and aim.dot(to_e.normalized()) > leer_arc:
+			if e.has_method("stun"):
+				e.stun(leer_stun)
+			if e.has_method("mark"):
+				e.mark(mark_duration)
+
+func _show_leer_fx(aim: Vector2) -> void:
 	glare_eyes.position = aim * 14.0
 	glare_eyes.rotation = aim.angle()
 	glare_eyes.scale = Vector2(0.35, 0.35)
@@ -369,16 +588,6 @@ func _leer() -> void:
 	glare_tween.tween_property(glare_eyes, "scale", Vector2(1.05, 1.05), leer_show * 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	glare_tween.parallel().tween_property(glare_eyes, "modulate:a", 0.35, leer_show)
 	glare_tween.tween_callback(func(): glare_eyes.visible = false)
-	style_event.emit("glare", 0)
-	for e in get_tree().get_nodes_in_group("enemies"):
-		if not is_instance_valid(e):
-			continue
-		var to_e: Vector2 = e.global_position - global_position
-		if to_e.length() <= leer_range and aim.dot(to_e.normalized()) > leer_arc:
-			if e.has_method("stun"):
-				e.stun(leer_stun)
-			if e.has_method("mark"):
-				e.mark(mark_duration)
 
 # Contact shadow. Together with the sprite's outline shader this is what stops
 # the cat from vanishing into the floor tiles - it anchors her to the ground and
