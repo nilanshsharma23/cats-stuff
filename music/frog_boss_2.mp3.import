@@ -12,7 +12,7 @@ dest_files=["res://.godot/imported/frog_boss_2.mp3-0bf3234aedc7c1be9fe991ff824b5
 
 [params]
 
-loop=false
+loop=true
 loop_offset=0
 bpm=0
 beat_count=0

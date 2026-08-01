@@ -3,9 +3,9 @@ extends CharacterBody2D
 signal died
 signal style_event(kind: String, amount: int)
 
-# Faster than the base rat (112) so the player can always disengage; scurriers
-# (142) remain the one thing that can run you down.
-@export var speed: int = 122
+# A hair faster than the base rat (112) so disengaging is possible but not free;
+# scurriers (142) still run you down.
+@export var speed: int = 116
 @export var max_health: int = 8
 @export var dash_speed: float = 300.0
 @export var dash_duration: float = 0.16
@@ -46,6 +46,11 @@ signal style_event(kind: String, amount: int)
 @export var leer_show: float = 0.5
 
 @export var invuln_time: float = 0.22
+
+# Parry has to be aimed at a specific enemy at knife range, not thrown out into a
+# crowd: reach is barely past the cat's own attack range and the cone is ~45deg.
+const PARRY_REACH: float = 40.0
+const PARRY_CONE: float = 0.72
 
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var health_bar: TextureProgressBar = $UI/Control/HealthBar
@@ -177,15 +182,14 @@ func _physics_process(delta: float) -> void:
 		# cooldown, not a blanket cloak. The safe, rewarding option is to dash INTO
 		# a telegraphing enemy and PARRY it (below), which pays out far better than
 		# scampering away ever could.
-		invuln_timer = max(invuln_timer, dash_duration)
+		invuln_timer = max(invuln_timer, dash_duration * 0.75)
 		style_event.emit("dash", 2)
 		if _try_parry():
-			# Perfect deflect: refund the dash, refresh i-frames to reposition, and
-			# lick a wound closed. Aggression is the defense.
-			dash_cd_left = 0.0
-			invuln_timer = 0.55
-			health = mini(health + 1, max_health)
-			health_bar.value = health
+			# Perfect deflect: most of the dash back and a beat of i-frames to
+			# reposition. It buys tempo and style, never health - free healing on a
+			# repeatable input is what made the cat unkillable.
+			dash_cd_left = dash_cooldown * 0.35
+			invuln_timer = 0.28
 		_set_flash(true)
 		return
 
@@ -199,11 +203,11 @@ func _physics_process(delta: float) -> void:
 	else:
 		_play("idle_" + _facing())
 
-# Sekiro-style deflect: you must dash INTO a telegraphing enemy (dash aimed
-# toward it while its tell is on screen) to freeze it. Dodging away never parries.
+# Sekiro-style deflect: you must dash INTO an enemy during the last beat of its
+# wind-up (see each enemy's is_parryable) to freeze it. Dodging away never
+# parries, and the reach and cone are tight enough that it has to be aimed.
 # Returns true if at least one enemy was deflected, so the caller can reward it.
 func _try_parry() -> bool:
-	SoundManager.play_sound_with_pitch(CAT_PARRY, RandomNumberGenerator.new().randf_range(1.2, 0.8))
 	var parried := false
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e):
@@ -213,12 +217,14 @@ func _try_parry() -> bool:
 		if not e.is_parryable():
 			continue
 		var to_e: Vector2 = e.global_position - global_position
-		if to_e.length() > 80.0:
+		if to_e.length() > PARRY_REACH:
 			continue
-		if dash_direction.dot(to_e.normalized()) > 0.45:
-			e.freeze(2.0)
+		if dash_direction.dot(to_e.normalized()) > PARRY_CONE:
+			e.freeze(1.4)
 			style_event.emit("parry", 24)
 			parried = true
+	if parried:
+		SoundManager.play_sound_with_pitch(CAT_PARRY, RandomNumberGenerator.new().randf_range(1.2, 0.8))
 	return parried
 
 func _aim() -> Vector2:
@@ -396,7 +402,10 @@ func enemy_knockback(v: Vector2) -> void:
 		last_direction = v.normalized()
 
 func take_damage(amount: int) -> bool:
-	if health <= 0 or is_dashing or invuln_timer > 0.0:
+	# i-frames come from invuln_timer alone. The dash sets it for most (not all)
+	# of its duration, so a dash is a real dodge with a punishable tail rather
+	# than a blanket of immunity for as long as you keep dashing.
+	if health <= 0 or invuln_timer > 0.0:
 		return false
 	health -= amount
 	invuln_timer = invuln_time

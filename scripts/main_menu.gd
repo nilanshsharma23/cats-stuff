@@ -32,7 +32,11 @@ func _ready() -> void:
 	_ensure_endless_button()
 	$Center/Box/Play.grab_focus()
 	SoundManager.set_music_volume(0.5)
-	SoundManager.play_music(MAIN_MENU, 0, "Music")
+	# Menu music has to loop; the import flag says so too, this guards a re-import.
+	var track: AudioStream = MAIN_MENU
+	if track is AudioStreamMP3:
+		(track as AudioStreamMP3).loop = true
+	SoundManager.play_music(track, 0, "Music")
 
 func _apply_pixel_font(node: Node) -> void:
 	if node is Control:

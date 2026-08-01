@@ -23,6 +23,9 @@ const ARENA_MIN := Vector2(28, 24)
 const ARENA_MAX := Vector2(228, 120)
 const FROG_SCENE: PackedScene = preload("res://scenes/frog.tscn")
 
+# How long before impact a dash-parry still connects.
+const PARRY_WINDOW: float = 0.2
+
 var boss_name: String = "THE BOG BARON"
 var player: Node2D = null
 var health: int = max_health
@@ -38,7 +41,6 @@ var hop_start: Vector2 = Vector2.ZERO
 var hop_target: Vector2 = Vector2.ZERO
 var stun_timer: float = 0.0
 var frozen: bool = false
-var parry_window: float = 0.0
 var marked_timer: float = 0.0
 var bleed_timer: float = 0.0
 var bleed_accum: float = 0.0
@@ -68,15 +70,15 @@ func stun(duration: float) -> void:
 	_cancel_attack()
 	queue_redraw()
 
+# Deflectable only in the last beat of a wind-up, not for its whole duration.
 func is_parryable() -> bool:
-	return parry_window > 0.0 and not dead
+	return attack_kind.ends_with("_windup") and attack_timer <= PARRY_WINDOW and not dead
 
 func freeze(duration: float) -> void:
 	if dead:
 		return
 	frozen = true
 	stun_timer = max(stun_timer, duration)
-	parry_window = 0.0
 	_cancel_attack()
 	velocity = Vector2.ZERO
 	queue_redraw()
@@ -150,7 +152,6 @@ func _physics_process(delta: float) -> void:
 
 func _tick_common(delta: float) -> void:
 	hurt_timer = max(hurt_timer - delta, 0.0)
-	parry_window = max(parry_window - delta, 0.0)
 	marked_timer = max(marked_timer - delta, 0.0)
 	summon_cd = max(summon_cd - delta, 0.0)
 	_tick_bleed(delta)
@@ -201,21 +202,18 @@ func _begin_hop_attack() -> void:
 	attack_kind = "hop_windup"
 	attack_duration = 0.78
 	attack_timer = attack_duration
-	parry_window = attack_duration
 	_play("croak_" + _facing())
 
 func _begin_aoe_attack() -> void:
 	attack_kind = "aoe_windup"
 	attack_duration = 0.86
 	attack_timer = attack_duration
-	parry_window = attack_duration
 	_play("croak_" + _facing())
 
 func _begin_summon_attack() -> void:
 	attack_kind = "summon_windup"
 	attack_duration = 0.72
 	attack_timer = attack_duration
-	parry_window = attack_duration
 	_play("croak_" + _facing())
 
 func _update_attack(delta: float) -> void:
@@ -251,7 +249,6 @@ func _update_attack(delta: float) -> void:
 		_end_attack()
 
 func _release_summon() -> void:
-	parry_window = 0.0
 	_spawn_minion()
 	summon_cd = summon_cooldown
 	attack_kind = "recover"
@@ -290,7 +287,6 @@ func _summon_point() -> Vector2:
 	return _arena_clamp(global_position + Vector2.RIGHT * 32.0)
 
 func _release_hop() -> void:
-	parry_window = 0.0
 	attack_kind = "hop_air"
 	attack_duration = 0.28
 	attack_timer = attack_duration
@@ -307,7 +303,6 @@ func _land_hop() -> void:
 	_play("idle_" + _facing())
 
 func _release_aoe() -> void:
-	parry_window = 0.0
 	_damage_players_near(global_position, aoe_radius, aoe_damage, 240.0)
 	aoe.position = Vector2.ZERO
 	aoe.restart()
@@ -413,7 +408,8 @@ func _draw() -> void:
 func _draw_hop_tell() -> void:
 	var t: float = 1.0 - clampf(attack_timer / maxf(attack_duration, 0.01), 0.0, 1.0)
 	var target := to_local(hop_target)
-	draw_arc(target, hop_radius, 0.0, TAU, 36, Color(1.0, 0.28, 0.2, 0.62), 1.6, true)
+	var ring := Color(0.75, 1.0, 1.0, 0.95) if is_parryable() else Color(1.0, 0.28, 0.2, 0.62)
+	draw_arc(target, hop_radius, 0.0, TAU, 36, ring, 2.2 if is_parryable() else 1.6, true)
 	draw_circle(target, hop_radius * (0.18 + 0.12 * sin(t * TAU)), Color(0.55, 1.0, 0.48, 0.35))
 	draw_line(Vector2.ZERO, target, Color(0.55, 1.0, 0.48, 0.28), 1.0)
 
@@ -424,8 +420,8 @@ func _draw_summon_tell() -> void:
 
 func _draw_aoe_tell() -> void:
 	var t: float = 1.0 - clampf(attack_timer / maxf(attack_duration, 0.01), 0.0, 1.0)
-	var hot := Color(0.25, 1.0, 0.42, 0.45 + 0.28 * t)
-	draw_arc(Vector2.ZERO, aoe_radius, 0.0, TAU, 56, hot, 1.8, true)
+	var hot := Color(0.75, 1.0, 1.0, 0.95) if is_parryable() else Color(0.25, 1.0, 0.42, 0.45 + 0.28 * t)
+	draw_arc(Vector2.ZERO, aoe_radius, 0.0, TAU, 56, hot, 2.2 if is_parryable() else 1.8, true)
 	draw_arc(Vector2.ZERO, aoe_radius * 0.58, 0.0, TAU, 38, Color(0.8, 1.0, 0.4, 0.35), 1.1, true)
 
 func _draw_frost() -> void:

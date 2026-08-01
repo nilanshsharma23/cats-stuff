@@ -1,8 +1,9 @@
 [gd_resource type="SpriteFrames" format=3 uid="uid://qi1oeid2g12w"]
 
-[ext_resource type="Texture2D" path="res://sprites/cat attack frame 1.png" id="1"]
-[ext_resource type="Texture2D" path="res://sprites/cat attack frame 2.png" id="2"]
-[ext_resource type="Texture2D" path="res://sprites/cat attack frame 3.png" id="3"]
+[ext_resource type="Texture2D" uid="uid://bo7umu341q3d" path="res://sprites/bear_trap_frame1_open.png" id="1"]
+[ext_resource type="Texture2D" uid="uid://b7dj6ekqs64yd" path="res://sprites/bear_trap_frame2.png" id="2"]
+[ext_resource type="Texture2D" uid="uid://dho54qovky71k" path="res://sprites/bear_trap_frame3.png" id="3"]
+[ext_resource type="Texture2D" uid="uid://cofv5ngqwl0h3" path="res://sprites/bear_trap_frame4_closed.png" id="4"]
 
 [resource]
 animations = [{
@@ -15,8 +16,14 @@ animations = [{
 }, {
 "duration": 1.0,
 "texture": ExtResource("3")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4")
+}, {
+"duration": 2.0,
+"texture": ExtResource("4")
 }],
 "loop": false,
 "name": &"bite",
-"speed": 18.0
+"speed": 22.0
 }]

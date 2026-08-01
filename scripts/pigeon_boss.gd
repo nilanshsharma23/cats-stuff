@@ -4,7 +4,7 @@ signal died
 
 @export var move_speed: float = 64.0
 @export var max_health: int = 70
-@export var body_scale: float = 0.14
+@export var body_scale: float = 0.62
 @export var tint: Color = Color.WHITE
 @export var ghost_tint: Color = Color(0.78, 0.62, 1.0, 0.72)
 @export var circle_radius: float = 34.0
@@ -13,19 +13,14 @@ signal died
 @export var cross_damage: int = 1
 @export var score_value: int = 900
 
-@onready var sprite: Sprite2D = $Sprite
+@onready var sprite: AnimatedSprite2D = $Anim
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 
 const ARENA_MIN := Vector2(28, 24)
 const ARENA_MAX := Vector2(228, 120)
-const FRAME_TIME := 0.09
 
-var frames: Array[Texture2D] = [
-	preload("res://sprites/pigeon-1.png"),
-	preload("res://sprites/pigeon-2.png"),
-	preload("res://sprites/pigeon-3.png"),
-	preload("res://sprites/pigeon-4.png"),
-]
+# How long before impact a dash-parry still connects.
+const PARRY_WINDOW: float = 0.2
 
 var boss_name: String = "THE WIND WRAITH"
 var player: Node2D = null
@@ -41,7 +36,6 @@ var circle_target: Vector2 = Vector2.ZERO
 var circle_start: Vector2 = Vector2.ZERO
 var circle_end: Vector2 = Vector2.ZERO
 var cross_center: Vector2 = Vector2.ZERO
-var parry_window: float = 0.0
 var stun_timer: float = 0.0
 var frozen: bool = false
 var hurt_timer: float = 0.0
@@ -51,8 +45,6 @@ var bleed_accum: float = 0.0
 var bleed_dps: float = 0.0
 var knockback_vel: Vector2 = Vector2.ZERO
 var knockback_timer: float = 0.0
-var flap_timer: float = 0.0
-var frame_index: int = 0
 var last_direction: Vector2 = Vector2.RIGHT
 var wobble_seed: float = 0.0
 
@@ -76,15 +68,15 @@ func stun(duration: float) -> void:
 	_cancel_attack()
 	queue_redraw()
 
+# Deflectable only in the last beat of a wind-up, not for its whole duration.
 func is_parryable() -> bool:
-	return parry_window > 0.0 and not dead
+	return attack_kind.ends_with("_windup") and attack_timer <= PARRY_WINDOW and not dead
 
 func freeze(duration: float) -> void:
 	if dead:
 		return
 	frozen = true
 	stun_timer = max(stun_timer, duration)
-	parry_window = 0.0
 	_cancel_attack()
 	velocity = Vector2.ZERO
 	queue_redraw()
@@ -158,7 +150,6 @@ func _physics_process(delta: float) -> void:
 
 func _tick_common(delta: float) -> void:
 	hurt_timer = max(hurt_timer - delta, 0.0)
-	parry_window = max(parry_window - delta, 0.0)
 	marked_timer = max(marked_timer - delta, 0.0)
 	_tick_bleed(delta)
 
@@ -175,14 +166,30 @@ func _tick_bleed(delta: float) -> void:
 			health = 0
 			_die()
 
-func _animate(delta: float) -> void:
-	flap_timer -= delta
-	if flap_timer > 0.0:
+# Facing row for the sheet. The side artwork is drawn facing left, so it is
+# mirrored when the bird heads right.
+func _facing() -> String:
+	if absf(last_direction.x) >= absf(last_direction.y):
+		sprite.flip_h = last_direction.x > 0.0
+		return "side"
+	sprite.flip_h = false
+	return "front" if last_direction.y > 0.0 else "back"
+
+func _play(state: String) -> void:
+	var wanted := "%s_%s" % [state, _facing()]
+	if sprite.animation != wanted:
+		sprite.play(wanted)
+	sprite.speed_scale = _stage_speed()
+
+func _animate(_delta: float) -> void:
+	if dead:
 		return
-	flap_timer = FRAME_TIME / _stage_speed()
-	frame_index = (frame_index + 1) % frames.size()
-	sprite.texture = frames[frame_index]
-	sprite.flip_h = last_direction.x < 0.0
+	if hurt_timer > 0.0:
+		_play("hurt")
+	elif attack_kind == "circle_dash" or velocity.length() > 4.0:
+		_play("fly")
+	else:
+		_play("idle")
 
 func _hover(delta: float) -> void:
 	if player == null:
@@ -219,14 +226,12 @@ func _begin_circle_attack() -> void:
 	attack_kind = "circle_windup"
 	attack_duration = 1.05 / _stage_speed()
 	attack_timer = attack_duration
-	parry_window = attack_duration
 
 func _begin_cross_attack() -> void:
 	cross_center = _arena_clamp(player.global_position if player != null else global_position)
 	attack_kind = "cross_windup"
 	attack_duration = 0.88 / _stage_speed()
 	attack_timer = attack_duration
-	parry_window = attack_duration
 
 func _update_attack(delta: float) -> void:
 	attack_timer -= delta
@@ -252,7 +257,6 @@ func _update_attack(delta: float) -> void:
 		_end_attack()
 
 func _release_circle_attack() -> void:
-	parry_window = 0.0
 	_damage_players_in_circle()
 	attack_kind = "circle_dash"
 	attack_duration = 0.34 / _stage_speed()
@@ -260,7 +264,6 @@ func _release_circle_attack() -> void:
 	global_position = circle_start
 
 func _release_cross_attack() -> void:
-	parry_window = 0.0
 	_damage_players_in_cross()
 	attack_kind = "cross_blast"
 	attack_duration = 0.22 / _stage_speed()
@@ -342,11 +345,14 @@ func _die() -> void:
 	_cancel_attack()
 	remove_from_group("enemies")
 	collision_shape.set_deferred("disabled", true)
-	sprite.self_modulate = Color(0.92, 0.82, 1.0, 0.32)
+	sprite.speed_scale = 1.0
+	sprite.play("death_" + _facing())
 	died.emit()
+	await get_tree().create_timer(0.75, true, false, true).timeout
+	if not is_instance_valid(self):
+		return
 	var t := create_tween()
-	t.tween_property(sprite, "scale", Vector2(body_scale, body_scale) * 1.7, 0.35)
-	t.parallel().tween_property(sprite, "self_modulate:a", 0.0, 0.35)
+	t.tween_property(sprite, "self_modulate:a", 0.0, 0.3)
 	await t.finished
 	if is_instance_valid(self):
 		queue_free()
@@ -378,7 +384,9 @@ func _draw_circle_attack() -> void:
 	var wind := Color(0.72, 0.95, 1.0, 0.42)
 	var danger := Color(1.0, 0.24, 0.48, 0.65)
 	var t: float = 1.0 - clampf(attack_timer / maxf(attack_duration, 0.01), 0.0, 1.0)
-	draw_arc(local_target, circle_radius, 0.0, TAU, 48, danger, 1.6, true)
+	if is_parryable():
+		danger = Color(0.75, 1.0, 1.0, 0.95)
+	draw_arc(local_target, circle_radius, 0.0, TAU, 48, danger, 2.2 if is_parryable() else 1.6, true)
 	draw_arc(local_target, circle_radius * (0.55 + 0.18 * sin(t * TAU)), 0.0, TAU, 32, wind, 1.0, true)
 	var dash_dir := (circle_end - circle_start).normalized()
 	var side := Vector2(-dash_dir.y, dash_dir.x)
@@ -392,6 +400,8 @@ func _draw_cross_attack() -> void:
 	var col := Color(0.6, 0.9, 1.0, 0.5)
 	var hot := Color(1.0, 0.2, 0.52, 0.7)
 	var line_col: Color = hot if attack_kind == "cross_blast" else col
+	if is_parryable():
+		line_col = Color(0.75, 1.0, 1.0, 0.95)
 	var dirs := [Vector2(1, 1).normalized(), Vector2(1, -1).normalized()]
 	for dir in dirs:
 		var normal := Vector2(-dir.y, dir.x)

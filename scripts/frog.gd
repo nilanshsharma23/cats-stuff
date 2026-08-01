@@ -23,6 +23,9 @@ signal died
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var aoe: CPUParticles2D = $Aoe
 
+# How long before impact a dash-parry still connects.
+const PARRY_WINDOW: float = 0.18
+
 var is_boss: bool = false
 var tint: Color = Color.WHITE
 var body_scale: float = 0.72
@@ -40,7 +43,6 @@ var hurt_timer: float = 0.0
 var stun_timer: float = 0.0
 var knockback_vel: Vector2 = Vector2.ZERO
 var knockback_timer: float = 0.0
-var parry_window: float = 0.0
 var frozen: bool = false
 var marked_timer: float = 0.0
 var bleed_timer: float = 0.0
@@ -74,17 +76,16 @@ func stun(duration: float) -> void:
 	is_croaking = false
 	queue_redraw()
 
-# Open only while the croak wind-up tell is on screen; a dash in that
-# window freezes the frog.
+# Deflectable only in the last beat before the croak lands, not for the whole
+# wind-up; the tell flashes white over that window.
 func is_parryable() -> bool:
-	return parry_window > 0.0 and not dead
+	return is_croaking and croak_timer <= PARRY_WINDOW and not dead
 
 func freeze(duration: float) -> void:
 	if dead:
 		return
 	frozen = true
 	stun_timer = max(stun_timer, duration)
-	parry_window = 0.0
 	is_croaking = false
 	velocity = Vector2.ZERO
 	queue_redraw()
@@ -131,7 +132,6 @@ func _physics_process(delta: float) -> void:
 	_find_player()
 	croak_cd = max(croak_cd - delta, 0.0)
 	hurt_timer = max(hurt_timer - delta, 0.0)
-	parry_window = max(parry_window - delta, 0.0)
 	marked_timer = max(marked_timer - delta, 0.0)
 	attack_lock = max(attack_lock - delta, 0.0)
 	_tick_bleed(delta)
@@ -226,7 +226,6 @@ func _begin_croak() -> void:
 	is_croaking = true
 	croak_timer = croak_windup
 	croak_cd = croak_cooldown
-	parry_window = 0.5
 	_play("croak_" + _facing())
 
 func _bite_player(direction: Vector2) -> void:
@@ -338,7 +337,9 @@ func _draw_croak_tell() -> void:
 	var t: float = 1.0 - clamp(croak_timer / croak_windup, 0.0, 1.0)
 	var r: float = aoe_radius * (0.35 + 0.65 * t)
 	var a: float = 0.22 + 0.4 * t
-	draw_arc(Vector2.ZERO, r, 0.0, TAU, 40, Color(0.3, 1.0, 0.45, a), 1.5, true)
+	var open: bool = croak_timer <= PARRY_WINDOW
+	var ring := Color(0.75, 1.0, 1.0, 0.95) if open else Color(0.3, 1.0, 0.45, a)
+	draw_arc(Vector2.ZERO, r, 0.0, TAU, 40, ring, 2.0 if open else 1.5, true)
 	draw_arc(Vector2.ZERO, r * 0.6, 0.0, TAU, 28, Color(0.55, 1.0, 0.6, a * 0.55), 1.0, true)
 
 func _draw_bleed() -> void:

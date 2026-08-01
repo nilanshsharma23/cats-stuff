@@ -12,7 +12,7 @@ dest_files=["res://.godot/imported/lose_screen.mp3-0742833f574e3aa95119436a44e00
 
 [params]
 
-loop=false
+loop=true
 loop_offset=0
 bpm=0
 beat_count=0

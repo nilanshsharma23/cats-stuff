@@ -32,7 +32,7 @@ var ROSTER := {
 	"brute": {
 		"scene": "rat",
 		"cfg": {"max_health": 8, "move_speed": 68.0, "nibble_damage": 2, "dash_damage": 2,
-			"behavior": "bruiser", "nibble_range": 23.0, "nibble_windup": 0.48, "dash_chance": 0.36,
+			"behavior": "bruiser", "nibble_range": 23.0, "nibble_windup": 0.38, "dash_chance": 0.36,
 			"knockback_resist": 0.66,
 			"tint": Color(1.0, 0.5, 0.42), "body_scale": 1.08, "score_value": 42}
 	},
@@ -50,7 +50,7 @@ var ROSTER := {
 	"boss": {
 		"scene": "rat",
 		"cfg": {"is_boss": true, "max_health": 64, "move_speed": 86.0,
-			"nibble_damage": 2, "nibble_range": 30.0, "nibble_interval": 0.55, "nibble_windup": 0.28,
+			"nibble_damage": 2, "nibble_range": 30.0, "nibble_interval": 0.55, "nibble_windup": 0.22,
 			"dash_chance": 0.9, "dash_windup": 0.52, "dash_speed": 286.0,
 			"dash_cooldown_min": 1.0, "dash_cooldown_max": 1.8,
 			"knockback_resist": 0.9, "tint": Color(0.85, 0.4, 1.0),
@@ -123,7 +123,6 @@ var boss_bar_width: float = 150.0
 var ability_panel: HBoxContainer
 var ability_slots: Dictionary = {}
 var hud_panel: ColorRect
-var player_panel: ColorRect
 var score_panel: ColorRect
 var pause_panel: Control
 var pause_resume: Button
@@ -233,7 +232,7 @@ func _sync_fight_ui() -> void:
 	var boss_fight: bool = shown and boss_active
 	_set_player_health_visible(shown)
 	# Bottom HUD (player card, rank, abilities) is always up during a fight.
-	for n in [player_panel, combo_label, ability_panel]:
+	for n in [combo_label, ability_panel]:
 		if n != null:
 			n.visible = shown
 	# The top wave/score plates step aside for the boss bar so nothing stacks.
@@ -329,7 +328,7 @@ func _spawn_popup(pos: Vector2, text: String) -> void:
 	t.tween_callback(l.queue_free)
 
 func _hide_hud() -> void:
-	for n in [hud_panel, score_panel, player_panel, wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel, ability_panel]:
+	for n in [hud_panel, score_panel, wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel, ability_panel]:
 		if n != null:
 			n.visible = false
 	var cat := get_tree().get_first_node_in_group("player")
@@ -351,10 +350,17 @@ func _check_combo_milestone() -> void:
 		_flash(Color(1.0, 0.4, 0.9), 0.5)
 		_shake(2.8)
 
+# Every track is background music, so it has to loop. The import flag is set to
+# loop as well; this guards against a re-import quietly resetting it.
+func _play_music(track: AudioStream) -> void:
+	if track is AudioStreamMP3:
+		(track as AudioStreamMP3).loop = true
+	SoundManager.play_music(track, 0, "Music")
+
 func _build_waves() -> void:
 	if endless:
 		waves = [_gen_endless_wave(0)]
-		SoundManager.play_music(RAT_BOSS_1, 0, "Music")
+		_play_music(RAT_BOSS_1)
 		return
 	if level_id == 1:
 		if tutorial_enabled:
@@ -371,7 +377,7 @@ func _build_waves() -> void:
 				[["rat", 4], ["brute", 1], ["spitter", 2]],
 				[["rat", 5], ["scurrier", 4], ["frog", 3]],
 			]
-		SoundManager.play_music(WAVE_MUSIC, 0, "Music")
+		_play_music(WAVE_MUSIC)
 	elif level_id == 2:
 		waves = [
 			[["rat", 6], ["frog", 2]],
@@ -380,7 +386,7 @@ func _build_waves() -> void:
 			[["scurrier", 6], ["brute", 2], ["spitter", 3]],
 			[["boss", 1], ["scurrier", 4], ["frog", 2]],
 		]
-		SoundManager.play_music(RAT_BOSS_1, 0, "Music")
+		_play_music(RAT_BOSS_1)
 	elif level_id == 3:
 		waves = [
 			[["spitter", 4], ["frog", 5]],
@@ -388,7 +394,7 @@ func _build_waves() -> void:
 			[["frog", 5], ["spitter", 4], ["brute", 3]],
 			[["frog_boss", 1], ["frog", 3], ["spitter", 2]],
 		]
-		SoundManager.play_music(FROG_BOSS_2, 0, "Music")
+		_play_music(FROG_BOSS_2)
 	else:
 		waves = [
 			[["rat", 7], ["brute", 3], ["spitter", 4]],
@@ -396,7 +402,7 @@ func _build_waves() -> void:
 			[["brute", 4], ["scurrier", 6], ["spitter", 5]],
 			[["pigeon_boss", 1], ["scurrier", 4], ["spitter", 2]],
 		]
-		SoundManager.play_music(PIGEON_BOSS_3, 0, "Music")
+		_play_music(PIGEON_BOSS_3)
 
 func _is_boss_wave(index: int) -> bool:
 	if index < 0 or index >= waves.size():
@@ -472,15 +478,23 @@ func _next_wave() -> void:
 # Difficulty scales with wave depth only - upgrades the player buys are theirs
 # to keep. Growth is gentle and capped so late waves add pressure through
 # numbers and mix, not HP sponges. Bosses scale gently by level only.
-func _scaled_cfg(cfg: Dictionary) -> Dictionary:
+func _scaled_cfg(cfg: Dictionary, scene_key: String) -> Dictionary:
 	var out: Dictionary = cfg.duplicate(true)
 	if bool(out.get("is_boss", false)):
 		out["max_health"] = int(round(float(out.get("max_health", 40)) * (1.0 + 0.1 * float(level_id - 1))))
 		return out
-	var hp_mul := minf(1.0 + 0.08 * float(maxi(wave_index, 0)), 1.9)
-	out["max_health"] = maxi(1, int(round(float(out.get("max_health", 3)) * hp_mul)))
+	var wave := float(maxi(wave_index, 0))
+	out["max_health"] = maxi(1, int(round(float(out.get("max_health", 3)) * minf(1.0 + 0.1 * wave, 2.1))))
 	if out.has("move_speed"):
-		out["move_speed"] = float(out["move_speed"]) * minf(1.0 + 0.01 * float(maxi(wave_index, 0)), 1.1)
+		out["move_speed"] = float(out["move_speed"]) * minf(1.0 + 0.018 * wave, 1.14)
+	# Deeper waves swing sooner and more often. That is pressure the player can
+	# still read and dodge, unlike raw HP, which only makes fights longer.
+	if scene_key == "rat":
+		out["nibble_windup"] = maxf(float(out.get("nibble_windup", 0.26)) - 0.012 * wave, 0.16)
+		out["nibble_interval"] = maxf(float(out.get("nibble_interval", 0.72)) - 0.03 * wave, 0.42)
+	elif scene_key == "frog":
+		out["croak_windup"] = maxf(float(out.get("croak_windup", 0.55)) - 0.02 * wave, 0.34)
+		out["croak_cooldown"] = maxf(float(out.get("croak_cooldown", 2.35)) - 0.09 * wave, 1.2)
 	return out
 
 # Staggered spawn: wait out the batch delay, flash a converging marker at the
@@ -523,7 +537,7 @@ func _spawn_at(key: String, pos: Vector2) -> void:
 		return
 	var e := scene.instantiate()
 	if e.has_method("configure"):
-		e.configure(_scaled_cfg(data["cfg"]))
+		e.configure(_scaled_cfg(data["cfg"], scene_key))
 	e.position = pos
 	add_child(e)
 	if e.has_signal("died"):
@@ -968,12 +982,12 @@ func _build_hud() -> void:
 	# collide with each other or with the boss bar (which replaces them mid-boss).
 	hud_panel = _hud_plate("HudTop", Vector2(4, 3), Vector2(110, 11), Color(0.02, 0.025, 0.035, 0.82))
 	score_panel = _hud_plate("HudScore", Vector2(176, 3), Vector2(76, 22), Color(0.025, 0.025, 0.035, 0.86))
-	# Bottom-left player card is tall enough to frame the rank text AND the cat's
-	# health bar (which lives at y129 in cat.tscn) without them stacking.
-	player_panel = _hud_plate("PlayerCard", Vector2(4, 108), Vector2(100, 33), Color(0.025, 0.03, 0.045, 0.88))
+	# The rank/score sits bare on the arena - no plate behind it. Its heavy text
+	# outline is what keeps it legible over the floor.
 	wave_label = _hud_label(Vector2(8, 4), Vector2(104, 9), Color(0.96, 0.92, 0.74, 1.0), 6, HORIZONTAL_ALIGNMENT_LEFT)
 	score_label = _hud_label(Vector2(180, 5), Vector2(68, 16), Color(0.95, 0.96, 1.0, 1.0), 6, HORIZONTAL_ALIGNMENT_RIGHT)
-	combo_label = _hud_label(Vector2(9, 110), Vector2(92, 16), Color(1.0, 0.82, 0.25, 1.0), 6, HORIZONTAL_ALIGNMENT_LEFT)
+	combo_label = _hud_label(Vector2(9, 110), Vector2(92, 16), Color(1.0, 0.82, 0.25, 1.0), 7, HORIZONTAL_ALIGNMENT_LEFT)
+	combo_label.add_theme_constant_override("outline_size", 4)
 	enemies_label = _hud_label(Vector2(0, 0), Vector2(1, 1), Color(1.0, 0.62, 0.55, 1.0), 7, HORIZONTAL_ALIGNMENT_RIGHT)
 	enemies_label.visible = false
 	reward_label = _hud_label(Vector2(48, 98), Vector2(160, 10), Color(0.55, 1.0, 0.86, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)

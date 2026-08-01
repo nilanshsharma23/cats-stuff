@@ -7,7 +7,7 @@ signal died
 @export var detection_radius: float = 900.0
 @export var nibble_range: float = 18.0
 @export var nibble_damage: int = 1
-@export var nibble_windup: float = 0.35
+@export var nibble_windup: float = 0.26
 @export var dash_damage: int = 1
 @export var nibble_interval: float = 0.72
 @export var dash_cooldown_min: float = 1.0
@@ -31,6 +31,9 @@ signal died
 @onready var attack_sparkles: CPUParticles2D = $AttackSparkles
 
 const RAT_SCENE: PackedScene = preload("res://scenes/rat.tscn")
+
+# How long before impact a dash-parry still connects.
+const PARRY_WINDOW: float = 0.18
 
 var is_boss: bool = false
 var tint: Color = Color.WHITE
@@ -60,7 +63,6 @@ var stun_timer: float = 0.0
 var knockback_vel: Vector2 = Vector2.ZERO
 var knockback_timer: float = 0.0
 var dash_hit_done: bool = false
-var parry_window: float = 0.0
 var frozen: bool = false
 var marked_timer: float = 0.0
 var bleed_timer: float = 0.0
@@ -101,17 +103,22 @@ func stun(duration: float) -> void:
     attack_timer = 0.0
     queue_redraw()
 
-# The window during which a well-timed player dash can freeze this enemy,
-# open only while an attack tell is on screen.
+# Deflectable only in the last beat before the blow lands - not for the whole
+# wind-up. The tell flashes white over this window so the timing is readable.
 func is_parryable() -> bool:
-    return parry_window > 0.0 and not dead
+    if dead:
+        return false
+    if is_nibbling:
+        return nibble_wind_timer <= PARRY_WINDOW
+    if is_winding:
+        return wind_timer <= PARRY_WINDOW
+    return false
 
 func freeze(duration: float) -> void:
     if dead:
         return
     frozen = true
     stun_timer = max(stun_timer, duration)
-    parry_window = 0.0
     is_dashing = false
     is_winding = false
     is_nibbling = false
@@ -163,7 +170,6 @@ func _physics_process(delta: float) -> void:
     dash_timer = max(dash_timer - delta, 0.0)
     hurt_timer = max(hurt_timer - delta, 0.0)
     attack_timer = max(attack_timer - delta, 0.0)
-    parry_window = max(parry_window - delta, 0.0)
     marked_timer = max(marked_timer - delta, 0.0)
     attack_lock = max(attack_lock - delta, 0.0)
     retreat_timer = max(retreat_timer - delta, 0.0)
@@ -370,20 +376,19 @@ func _face(direction: Vector2) -> void:
 func _try_nibble(direction: Vector2) -> void:
     if nibble_timer > 0.0:
         return
-    nibble_timer = nibble_interval + nibble_windup
     is_nibbling = true
     nibble_wind_timer = nibble_windup
     nibble_dir = direction if direction != Vector2.ZERO else last_direction
-    parry_window = nibble_windup + 0.1
     queue_redraw()
 
 # The wind-up has elapsed: snap at where the rat was aiming. Whiffs cleanly if
 # the player dashed or walked out of reach.
 func _land_nibble() -> void:
+    nibble_timer = nibble_interval
     attack_timer = attack_show_time
     _show_bite(nibble_dir)
     if player != null and is_instance_valid(player):
-        if global_position.distance_to(player.global_position) <= nibble_range * 1.3:
+        if global_position.distance_to(player.global_position) <= nibble_range * 1.15:
             _bite(nibble_damage)
     if behavior == "skirmisher":
         retreat_timer = 0.75   # hit and run: poke, then create space
@@ -391,7 +396,6 @@ func _land_nibble() -> void:
 func _begin_windup(direction: Vector2) -> void:
     is_winding = true
     wind_timer = dash_windup
-    parry_window = 0.5
     wind_dir = direction if direction != Vector2.ZERO else last_direction
 
 func _start_dash(direction: Vector2) -> void:
@@ -493,7 +497,7 @@ func _draw() -> void:
     if is_winding:
         var t: float = 1.0 - clamp(wind_timer / dash_windup, 0.0, 1.0)
         var reach: float = dash_speed * dash_duration
-        var col := Color(1.0, 0.15, 0.15, 0.45 + 0.45 * t)
+        var col := Color(0.75, 1.0, 1.0, 0.95) if wind_timer <= PARRY_WINDOW else Color(1.0, 0.15, 0.15, 0.45 + 0.45 * t)
         var tip: Vector2 = wind_dir * reach
         var side := Vector2(-wind_dir.y, wind_dir.x) * nibble_range
         draw_line(side * 0.45, tip + side * 0.45, col, 1.2)
@@ -502,9 +506,10 @@ func _draw() -> void:
         draw_circle(Vector2.ZERO, 1.5 + 1.5 * t, Color(1.0, 0.1, 0.1, 0.85))
     if is_nibbling:
         var nt: float = 1.0 - clamp(nibble_wind_timer / maxf(nibble_windup, 0.01), 0.0, 1.0)
-        var ncol := Color(1.0, 0.3, 0.15, 0.35 + 0.5 * nt)
+        var open: bool = nibble_wind_timer <= PARRY_WINDOW
+        var ncol := Color(0.75, 1.0, 1.0, 0.95) if open else Color(1.0, 0.3, 0.15, 0.35 + 0.5 * nt)
         var bite_at: Vector2 = nibble_dir * nibble_range * 0.55
-        draw_arc(bite_at, nibble_range * (1.0 - 0.35 * nt), 0.0, TAU, 20, ncol, 1.4, true)
+        draw_arc(bite_at, nibble_range * (1.0 - 0.35 * nt), 0.0, TAU, 20, ncol, 1.4 if not open else 2.0, true)
         draw_circle(bite_at, 1.2 + 1.8 * nt, Color(1.0, 0.15, 0.1, 0.8))
     if attack_timer > 0.0:
         var a: float = clamp(attack_timer / attack_show_time, 0.0, 1.0)
