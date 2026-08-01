@@ -7,6 +7,7 @@
 [ext_resource type="Texture2D" uid="uid://dnll1lcyf475i" path="res://sprites/health_bar.png" id="5_tol8a"]
 [ext_resource type="SpriteFrames" uid="uid://bcatslash01" path="res://sprites/cat_slash_frames.tres" id="6_slash"]
 [ext_resource type="Texture2D" uid="uid://cglareimport" path="res://sprites/glare.png" id="7_glare"]
+[ext_resource type="SpriteFrames" uid="uid://bcattailframes01" path="res://sprites/cat_tail_frames.tres" id="8_tail"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_cat"]
 shader = ExtResource("3_shader")
@@ -37,6 +38,13 @@ z_index = 2
 scale = Vector2(0.62, 0.62)
 sprite_frames = ExtResource("6_slash")
 animation = &"slash"
+
+[node name="TailSweep" type="AnimatedSprite2D" parent="." unique_id=726517104]
+visible = false
+z_index = 2
+scale = Vector2(0.72, 0.72)
+sprite_frames = ExtResource("8_tail")
+animation = &"tail"
 
 [node name="GlareEyes" type="Node2D" parent="." unique_id=1842983455]
 visible = false
