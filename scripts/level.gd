@@ -192,6 +192,39 @@ func _hype(text: String, color: Color) -> void:
 	banner.modulate.a = 1.0
 	create_tween().tween_property(banner, "modulate:a", 0.0, 1.1)
 
+func _combo_color() -> Color:
+	if no_glare_chain >= 20:
+		return Color(1.0, 0.4, 0.9)
+	if no_glare_chain >= 10:
+		return Color(1.0, 0.55, 0.75)
+	if no_glare_chain >= 5:
+		return Color(1.0, 0.85, 0.35)
+	return Color(0.96, 0.97, 1.0)
+
+# Floating combat text that rises off a kill — cheap, immediate dopamine.
+func _spawn_popup(pos: Vector2, text: String) -> void:
+	var l := Label.new()
+	l.position = pos + Vector2(-10, -14)
+	l.z_index = 50
+	l.add_theme_font_size_override("font_size", 8)
+	l.add_theme_color_override("font_color", _combo_color())
+	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	l.add_theme_constant_override("outline_size", 3)
+	l.text = text
+	add_child(l)
+	var t := create_tween()
+	t.tween_property(l, "position:y", l.position.y - 14.0, 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.parallel().tween_property(l, "modulate:a", 0.0, 0.6)
+	t.tween_callback(l.queue_free)
+
+func _hide_hud() -> void:
+	for n in [wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel]:
+		if n != null:
+			n.visible = false
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat != null and cat.has_node("UI/Control"):
+		cat.get_node("UI/Control").visible = false
+
 func _multikill(n: int) -> void:
 	var names := {2: "DOUBLE KILL", 3: "TRIPLE KILL", 4: "QUAD KILL", 5: "PENTA KILL"}
 	_hype(names.get(n, "MASSACRE"), Color(1.0, 0.72, 0.2))
@@ -304,7 +337,10 @@ func _on_enemy_died(enemy: Node) -> void:
 	var value: int = 12
 	if enemy != null and is_instance_valid(enemy):
 		value = int(enemy.get("score_value"))
-	score += value + wave_index * 4
+	var gained: int = value + wave_index * 4
+	score += gained
+	if enemy != null and is_instance_valid(enemy):
+		_spawn_popup(enemy.global_position, "+%d" % gained)
 	_on_style_event("enemy_down", 14)
 	if not cleared and not boss_active and _live_enemy_count() == 0:
 		_award_wave_clear()
@@ -377,19 +413,26 @@ func _on_style_event(kind: String, amount: int) -> void:
 	if kind == "multi":
 		_multikill(amount)
 		return
+	# Plain dashing is free movement — it neither builds nor breaks the combo.
+	# The combo is a damage-and-parry streak, not a dash-spam counter.
+	if kind == "dash":
+		return
 	if amount < 0:
 		if kind == "glare":
+			# LEER is now an offensive setup, not a punish: it costs a sliver of
+			# style but never wipes the combo.
 			glare_uses += 1
-			_set_reward("Glare saved you. Style taxed.")
+			_set_reward("LEER! Marked prey — hit them to EXECUTE.")
+			_flash(Color(1.0, 0.2, 0.25), 0.22)
 		if kind == "damage_taken":
 			_flash(Color(1.0, 0.2, 0.2), 0.5)
 			_shake(2.6)
-		no_glare_chain = 0
-		last_milestone = 0
+			no_glare_chain = 0
+			last_milestone = 0
 		style_meter = max(style_meter + amount, 0.0)
 		style_timeout = 1.0
 		return
-	if kind == "paw_hit" or kind == "paw_kill" or kind == "dash" or kind == "enemy_down" or kind == "parry":
+	if kind == "paw_hit" or kind == "paw_kill" or kind == "enemy_down" or kind == "parry" or kind == "execute":
 		no_glare_chain += 1
 	var multiplier: float = 1.0 + mini(no_glare_chain, 24) * 0.06
 	style_meter += amount * multiplier
@@ -398,18 +441,22 @@ func _on_style_event(kind: String, amount: int) -> void:
 		_shake(0.7)
 	elif kind == "enemy_down":
 		_shake(0.9)
-	if kind != "dash":
-		var scored: int = maxi(1, int(amount * multiplier * 0.8))
-		score += scored
-		if kind == "paw_kill":
-			_set_reward("Clean kill +%d  Chain x%d" % [scored, no_glare_chain])
-			_flash(Color(1, 1, 1), 0.18)
-			_shake(1.4)
-		elif kind == "parry":
-			_set_reward("PARRY! Frozen +%d  Chain x%d" % [scored, no_glare_chain])
-			_hype("PARRY!", Color(0.4, 0.92, 1.0))
-			_flash(Color(0.55, 0.92, 1.0), 0.7)
-			_shake(3.6)
+	var scored: int = maxi(1, int(amount * multiplier * 0.8))
+	score += scored
+	if kind == "paw_kill":
+		_set_reward("Clean kill +%d  Chain x%d" % [scored, no_glare_chain])
+		_flash(Color(1, 1, 1), 0.18)
+		_shake(1.4)
+	elif kind == "execute":
+		_set_reward("EXECUTE +%d  Chain x%d" % [scored, no_glare_chain])
+		_hype("EXECUTE", Color(1.0, 0.3, 0.35))
+		_flash(Color(1.0, 0.35, 0.4), 0.45)
+		_shake(2.6)
+	elif kind == "parry":
+		_set_reward("PARRY! Frozen +%d  Chain x%d" % [scored, no_glare_chain])
+		_hype("PARRY!", Color(0.4, 0.92, 1.0))
+		_flash(Color(0.55, 0.92, 1.0), 0.7)
+		_shake(3.6)
 	_check_combo_milestone()
 
 func _style_rank() -> String:
@@ -611,6 +658,7 @@ func _build_result_panel() -> void:
 
 func _finish_run(title: String, success: bool) -> void:
 	_bank_run()
+	_hide_hud()
 	result_title.text = title
 	result_path = next_level_path if success and next_level_path != "" else "res://scenes/level1.tscn"
 	result_continue.text = "NEXT LEVEL" if success and next_level_path != "" else "PLAY AGAIN"

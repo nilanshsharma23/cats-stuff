@@ -25,7 +25,7 @@ signal style_event(kind: String, amount: int)
 
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var health_bar: TextureProgressBar = $UI/Control/HealthBar
-@onready var paw_particles: CPUParticles2D = $PawParticles
+@onready var slash: AnimatedSprite2D = $Slash
 @onready var glare_eyes: Node2D = $GlareEyes
 
 var health: int = max_health
@@ -47,6 +47,8 @@ func _ready() -> void:
 	health_bar.max_value = max_health
 	health_bar.value = health
 	glare_eyes.visible = false
+	slash.visible = false
+	slash.animation_finished.connect(func(): slash.visible = false)
 
 func _physics_process(delta: float) -> void:
 	if dead:
@@ -100,15 +102,20 @@ func _physics_process(delta: float) -> void:
 	else:
 		_play("idle_" + _facing())
 
-# Dashing the instant an enemy telegraphs its attack (its tell is on screen)
-# freezes that enemy solid — a reward for reading the wind-up.
+# Sekiro-style deflect: you must dash INTO a telegraphing enemy (dash aimed
+# toward it while its tell is on screen) to freeze it. Dodging away never parries.
 func _try_parry() -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e):
 			continue
 		if not (e.has_method("is_parryable") and e.has_method("freeze")):
 			continue
-		if e.is_parryable() and global_position.distance_to(e.global_position) <= 74.0:
+		if not e.is_parryable():
+			continue
+		var to_e: Vector2 = e.global_position - global_position
+		if to_e.length() > 80.0:
+			continue
+		if dash_direction.dot(to_e.normalized()) > 0.45:
 			e.freeze(2.0)
 			style_event.emit("parry", 24)
 
@@ -120,26 +127,36 @@ func _paw() -> void:
 	paw_cd = paw_cooldown
 	var aim := _aim()
 	last_direction = aim
-	paw_particles.rotation = aim.angle()
-	paw_particles.position = aim * 12.0
-	paw_particles.restart()
-	paw_particles.emitting = true
+	_show_slash(aim)
 	var kills: int = 0
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e) or not e.has_method("take_damage"):
 			continue
 		var to_e: Vector2 = e.global_position - global_position
 		if to_e.length() <= paw_range and aim.dot(to_e.normalized()) > paw_arc:
-			var killed: bool = e.take_damage(paw_damage)
+			var marked: bool = e.has_method("is_marked") and e.is_marked()
+			var damage: int = paw_damage * 2 if marked else paw_damage
+			var killed: bool = e.take_damage(damage)
 			style_event.emit("paw_hit", 4)
 			if killed:
 				kills += 1
-				style_event.emit("paw_kill", 16)
+				style_event.emit("execute" if marked else "paw_kill", 30 if marked else 16)
 			if e.has_method("knockback"):
 				e.knockback(to_e.normalized() * paw_knockback)
 	if kills >= 2:
 		style_event.emit("multi", kills)
 
+func _show_slash(aim: Vector2) -> void:
+	slash.position = aim * 13.0
+	slash.rotation = aim.angle()
+	slash.flip_v = aim.x < 0.0
+	slash.frame = 0
+	slash.visible = true
+	slash.play("slash")
+
+# LEER: stun and MARK a pack. Marked foes take double paw damage and detonate
+# into a satisfying EXECUTE when killed, turning glare into an offensive combo
+# setup instead of a panic button.
 func _glare() -> void:
 	glare_cd = glare_cooldown
 	var aim := _aim()
@@ -148,7 +165,7 @@ func _glare() -> void:
 	var t := create_tween()
 	t.tween_interval(glare_show)
 	t.tween_callback(func(): glare_eyes.visible = false)
-	style_event.emit("glare", -18)
+	style_event.emit("glare", -4)
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e):
 			continue
@@ -156,6 +173,8 @@ func _glare() -> void:
 		if to_e.length() <= glare_range and aim.dot(to_e.normalized()) > glare_arc:
 			if e.has_method("stun"):
 				e.stun(glare_stun)
+			if e.has_method("mark"):
+				e.mark(5.0)
 
 func _facing() -> String:
 	if abs(last_direction.x) >= abs(last_direction.y):
