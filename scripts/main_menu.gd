@@ -1,5 +1,7 @@
 extends Control
 
+const UI_FONT: FontFile = preload("res://fonts/Pixellari.ttf")
+
 var coins: int = 0
 var glare_level: int = 1
 var best_score: int = 0
@@ -20,11 +22,19 @@ func _ready() -> void:
 	_scale_menu()
 	_ensure_stats()
 	_ensure_shop_panel()
+	_apply_pixel_font(self)
 	$Center/Box/Play.pressed.connect(_on_play)
 	$Center/Box/Tutorial.pressed.connect(_on_tutorial)
 	$Center/Box/Shop.pressed.connect(_toggle_shop)
 	$Center/Box/Quit.pressed.connect(_on_quit)
 	$Center/Box/Play.grab_focus()
+
+func _apply_pixel_font(node: Node) -> void:
+	if node is Control:
+		var control := node as Control
+		control.add_theme_font_override("font", UI_FONT)
+	for child in node.get_children():
+		_apply_pixel_font(child)
 
 func _on_play() -> void:
 	get_tree().set_meta("tutorial_enabled", false)

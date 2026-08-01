@@ -1,5 +1,7 @@
 extends Node2D
 
+const UI_FONT: FontFile = preload("res://fonts/Pixellari.ttf")
+
 @export var level_id: int = 1
 @export var next_level_path: String = ""
 @export var rat_scene: PackedScene
@@ -125,6 +127,13 @@ var hp_buys: int = 0
 var dash_buys: int = 0
 var leer_buys: int = 0
 
+func _apply_pixel_font(node: Node) -> void:
+	if node is Control:
+		var control := node as Control
+		control.add_theme_font_override("font", UI_FONT)
+	for child in node.get_children():
+		_apply_pixel_font(child)
+
 # --- Game feel ("juice") ---
 var cam: Camera2D
 var shake_amt: float = 0.0
@@ -150,6 +159,7 @@ func _ready() -> void:
 	_build_shop_panel()
 	_build_break_panel()
 	_build_tutorial_panel()
+	_apply_pixel_font($UI)
 	var cat := get_tree().get_first_node_in_group("player")
 	if cat != null:
 		if cat.has_signal("died"):
@@ -236,6 +246,7 @@ func _spawn_popup(pos: Vector2, text: String) -> void:
 	var l := Label.new()
 	l.position = pos + Vector2(-10, -14)
 	l.z_index = 50
+	l.add_theme_font_override("font", UI_FONT)
 	l.add_theme_font_size_override("font_size", 8)
 	l.add_theme_color_override("font_color", _combo_color())
 	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
