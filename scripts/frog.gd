@@ -120,16 +120,16 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
-    _find_player()
-    croak_cd = max(croak_cd - delta, 0.0)
-    hurt_timer = max(hurt_timer - delta, 0.0)
-    parry_window = max(parry_window - delta, 0.0)
-    marked_timer = max(marked_timer - delta, 0.0)
-    attack_lock = max(attack_lock - delta, 0.0)
-    _tick_bleed(delta)
-    if dead:
-        return
-    queue_redraw()
+	_find_player()
+	croak_cd = max(croak_cd - delta, 0.0)
+	hurt_timer = max(hurt_timer - delta, 0.0)
+	parry_window = max(parry_window - delta, 0.0)
+	marked_timer = max(marked_timer - delta, 0.0)
+	attack_lock = max(attack_lock - delta, 0.0)
+	_tick_bleed(delta)
+	if dead:
+		return
+	queue_redraw()
 
 	if knockback_timer > 0.0:
 		knockback_timer -= delta
@@ -187,29 +187,29 @@ func _physics_process(delta: float) -> void:
 	var direction := _chase_direction(to_player)
 	_face(direction)
 
-    if distance <= croak_range:
-        velocity = Vector2.ZERO
-        if croak_cd <= 0.0 and attack_lock <= 0.0:
-            is_croaking = true
-            croak_timer = croak_windup
-            croak_cd = croak_cooldown
-            parry_window = 0.5
-            _play("croak_" + _facing())
-        else:
-            _play("idle_" + _facing())
-    else:
-        velocity = direction * move_speed
-        _play("walk_" + _facing())
+	if distance <= croak_range:
+		velocity = Vector2.ZERO
+		if croak_cd <= 0.0 and attack_lock <= 0.0:
+			is_croaking = true
+			croak_timer = croak_windup
+			croak_cd = croak_cooldown
+			parry_window = 0.5
+			_play("croak_" + _facing())
+		else:
+			_play("idle_" + _facing())
+	else:
+		velocity = direction * move_speed
+		_play("walk_" + _facing())
 
 	move_and_slide()
 
 func _bite_player(direction: Vector2) -> void:
-    bite_cd = bite_cooldown
-    attack_lock = 0.18
-    velocity = direction * move_speed * 0.35
-    _play("croak_" + _facing())
-    if player != null and is_instance_valid(player) and player.has_method("take_damage"):
-        player.take_damage(bite_damage)
+	bite_cd = bite_cooldown
+	attack_lock = 0.18
+	velocity = direction * move_speed * 0.35
+	_play("croak_" + _facing())
+	if player != null and is_instance_valid(player) and player.has_method("take_damage"):
+		player.take_damage(bite_damage)
 
 func _release_aoe() -> void:
 	aoe.restart()
@@ -293,26 +293,26 @@ func _play(name: String) -> void:
 		anim.play(name)
 
 func _draw() -> void:
-    if bleed_timer > 0.0:
-        _draw_bleed()
-    if is_marked():
-        _draw_mark()
-    if frozen and stun_timer > 0.0:
-        _draw_frost()
-        return
+	if bleed_timer > 0.0:
+		_draw_bleed()
+	if is_marked():
+		_draw_mark()
+	if frozen and stun_timer > 0.0:
+		_draw_frost()
+		return
 
 func _draw_bleed() -> void:
-    var col := Color(0.8, 0.05, 0.08, 0.85)
-    draw_circle(Vector2(-2, 3), 1.1, col)
-    draw_circle(Vector2(2.5, 5), 0.9, col)
-    draw_circle(Vector2(0, 6.5), 0.7, col)
-    if not is_croaking:
-        return
-    var t: float = 1.0 - clamp(croak_timer / croak_windup, 0.0, 1.0)
-    var r: float = aoe_radius * (0.35 + 0.65 * t)
-    var a: float = 0.22 + 0.4 * t
-    draw_arc(Vector2.ZERO, r, 0.0, TAU, 40, Color(0.3, 1.0, 0.45, a), 1.5, true)
-    draw_arc(Vector2.ZERO, r * 0.6, 0.0, TAU, 28, Color(0.55, 1.0, 0.6, a * 0.55), 1.0, true)
+	var col := Color(0.8, 0.05, 0.08, 0.85)
+	draw_circle(Vector2(-2, 3), 1.1, col)
+	draw_circle(Vector2(2.5, 5), 0.9, col)
+	draw_circle(Vector2(0, 6.5), 0.7, col)
+	if not is_croaking:
+		return
+	var t: float = 1.0 - clamp(croak_timer / croak_windup, 0.0, 1.0)
+	var r: float = aoe_radius * (0.35 + 0.65 * t)
+	var a: float = 0.22 + 0.4 * t
+	draw_arc(Vector2.ZERO, r, 0.0, TAU, 40, Color(0.3, 1.0, 0.45, a), 1.5, true)
+	draw_arc(Vector2.ZERO, r * 0.6, 0.0, TAU, 28, Color(0.55, 1.0, 0.6, a * 0.55), 1.0, true)
 
 func _draw_frost() -> void:
 	var col := Color(0.6, 0.92, 1.0, 0.9)

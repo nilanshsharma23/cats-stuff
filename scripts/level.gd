@@ -855,15 +855,15 @@ func _rank_coin_multiplier() -> float:
 	return 0.12
 
 func _build_hud() -> void:
-	hud_panel = _hud_plate("HudTop", Vector2(76, 4), Vector2(104, 16), Color(0.03, 0.035, 0.045, 0.76))
-	score_panel = _hud_plate("HudScore", Vector2(184, 5), Vector2(66, 17), Color(0.04, 0.04, 0.05, 0.82))
-	player_panel = _hud_plate("PlayerCard", Vector2(8, 111), Vector2(84, 27), Color(0.035, 0.04, 0.055, 0.86))
-	wave_label = _hud_label(Vector2(82, 7), Vector2(92, 9), Color(0.95, 0.92, 0.74, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
-	score_label = _hud_label(Vector2(188, 8), Vector2(58, 10), Color(0.95, 0.95, 1.0, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
-	combo_label = _hud_label(Vector2(13, 117), Vector2(74, 16), Color(1.0, 0.82, 0.25, 1.0), 7, HORIZONTAL_ALIGNMENT_LEFT)
+	hud_panel = _hud_plate("HudTop", Vector2(66, 3), Vector2(124, 15), Color(0.02, 0.025, 0.035, 0.82))
+	score_panel = _hud_plate("HudScore", Vector2(190, 4), Vector2(58, 21), Color(0.025, 0.025, 0.035, 0.86))
+	player_panel = _hud_plate("PlayerCard", Vector2(8, 113), Vector2(68, 23), Color(0.025, 0.03, 0.045, 0.88))
+	wave_label = _hud_label(Vector2(72, 6), Vector2(112, 9), Color(0.96, 0.92, 0.74, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
+	score_label = _hud_label(Vector2(195, 7), Vector2(48, 14), Color(0.95, 0.96, 1.0, 1.0), 6, HORIZONTAL_ALIGNMENT_CENTER)
+	combo_label = _hud_label(Vector2(13, 118), Vector2(58, 14), Color(1.0, 0.82, 0.25, 1.0), 6, HORIZONTAL_ALIGNMENT_LEFT)
 	enemies_label = _hud_label(Vector2(0, 0), Vector2(1, 1), Color(1.0, 0.62, 0.55, 1.0), 7, HORIZONTAL_ALIGNMENT_RIGHT)
 	enemies_label.visible = false
-	reward_label = _hud_label(Vector2(54, 91), Vector2(148, 12), Color(0.5, 1.0, 0.85, 1.0), 8, HORIZONTAL_ALIGNMENT_CENTER)
+	reward_label = _hud_label(Vector2(55, 94), Vector2(146, 10), Color(0.55, 1.0, 0.86, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
 	reward_label.modulate.a = 0.0
 	_refresh_hud()
 
@@ -871,26 +871,26 @@ func _build_ability_bar() -> void:
 	ability_slots.clear()
 	ability_panel = HBoxContainer.new()
 	ability_panel.name = "AbilityBar"
-	ability_panel.position = Vector2(69, 122)
+	ability_panel.position = Vector2(78, 122)
 	ability_panel.add_theme_constant_override("separation", 3)
 	$UI.add_child(ability_panel)
 	_add_ability_slot("PAW", "M1", Color(0.48, 1.0, 0.66, 0.95))
 	_add_ability_slot("DASH", "SP", Color(0.62, 0.9, 1.0, 0.95))
-	_add_ability_slot("BITE", "M2", Color(1.0, 0.45, 0.34, 0.95))
+	_add_ability_slot("JAW", "M2", Color(1.0, 0.45, 0.34, 0.95))
 	_add_ability_slot("TAIL", "H", Color(0.5, 0.78, 1.0, 0.95))
 	_add_ability_slot("GLARE", "E", Color(1.0, 0.28, 0.45, 0.95))
 
 func _add_ability_slot(key: String, hint: String, color: Color) -> void:
 	var root := Control.new()
-	root.custom_minimum_size = Vector2(31, 14)
+	root.custom_minimum_size = Vector2(29, 15)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var bg := ColorRect.new()
-	bg.size = Vector2(31, 14)
-	bg.color = Color(0.06, 0.055, 0.075, 0.86)
+	bg.size = Vector2(29, 15)
+	bg.color = Color(0.025, 0.027, 0.038, 0.9)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(bg)
 	var fill := ColorRect.new()
-	fill.size = Vector2(31, 14)
+	fill.size = Vector2(29, 15)
 	fill.color = color
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(fill)
@@ -921,7 +921,7 @@ func _update_ability_bar() -> void:
 	_set_ability_slot("DASH", float(cat.get("dash_cd_left")), float(cat.get("dash_cooldown")))
 	var bite_cd: float = maxf(float(cat.get("bite_cd_left")), float(cat.get("bite_lock_timer")))
 	var bite_max: float = maxf(float(cat.get("bite_cooldown")), float(cat.get("bite_lock")))
-	_set_ability_slot("BITE", bite_cd, bite_max)
+	_set_ability_slot("JAW", bite_cd, bite_max)
 	_set_ability_slot("TAIL", float(cat.get("tail_cd")), float(cat.get("tail_cooldown")))
 	_set_ability_slot("GLARE", float(cat.get("leer_cd")), float(cat.get("leer_cooldown")))
 
@@ -931,12 +931,12 @@ func _set_ability_slot(key: String, cd: float, max_cd: float) -> void:
 	var slot: Dictionary = ability_slots[key]
 	var fill: ColorRect = slot["fill"]
 	var label: Label = slot["label"]
-	var width: float = 31.0
+	var width: float = 29.0
 	var ready: bool = cd <= 0.05
 	var fill_ratio: float = 1.0 if ready else 1.0 - clampf(cd / maxf(max_cd, 0.01), 0.0, 1.0)
-	fill.size = Vector2(width * fill_ratio, 14.0)
+	fill.size = Vector2(width * fill_ratio, 15.0)
 	fill.color = slot["color"] if ready else Color(0.18, 0.17, 0.2, 0.95)
-	label.text = "%s %s" % [key, String(slot["hint"])] if ready else "%s %.1f" % [key, cd]
+	label.text = "%s %s" % [key, String(slot["hint"])] if ready else "%.1fs" % cd
 
 func _hud_plate(title: String, pos: Vector2, box: Vector2, color: Color) -> ColorRect:
 	var plate := ColorRect.new()
@@ -973,9 +973,9 @@ func _refresh_hud() -> void:
 		return
 	var rank := _style_rank()
 	var left := _live_enemy_count()
-	wave_label.text = "WAVE %d  LEFT %d" % [clampi(wave_index + 1, 1, _normal_wave_count()), left]
-	score_label.text = "%d KILLS\n%d COIN" % [kills, coins]
-	combo_label.text = "%s\nSCORE %d" % [rank, score]
+	wave_label.text = "WAVE %d/%d   LEFT %02d" % [clampi(wave_index + 1, 1, _normal_wave_count()), _normal_wave_count(), left]
+	score_label.text = "KILLS %d\nCOIN %d" % [kills, coins]
+	combo_label.text = "%s\n%d PTS" % [rank, score]
 	combo_label.add_theme_color_override("font_color", _rank_color(rank))
 
 func _rank_color(rank: String) -> Color:
@@ -1291,10 +1291,10 @@ func _build_tutorial_panel() -> void:
 func _show_tutorial_step() -> void:
 	var steps := [
 		"Time stop. Move with WASD or arrows, aim with the mouse. LEFT CLICK = quick paw swipes.",
-		"RIGHT CLICK = heavy BITE. It roots you for a beat (you're open!), but one-shots small foes and makes them bleed.",
-		"HOLD RIGHT CLICK for a TAIL sweep that flings enemies away - clutch when you get swarmed.",
+		"RIGHT CLICK = heavy JAW. It roots you for a beat (you're open!), but deletes small foes and makes them bleed.",
+		"HOLD RIGHT CLICK for a TAIL sweep. It flings enemies away when you get swarmed.",
 		"Press E to LEER: stuns and MARKS a pack. Hit a marked foe to EXECUTE it for bonus style.",
-		"DASH (Space) INTO an enemy's attack tell to FREEZE it - a perfect parry. Spend coins between waves. Go hunt.",
+		"DASH (Space) INTO an enemy's attack tell to FREEZE it. Perfect parry. Spend coins between waves. Go hunt.",
 	]
 	tutorial_step = clampi(tutorial_step, 0, steps.size() - 1)
 	tutorial_text.text = steps[tutorial_step]

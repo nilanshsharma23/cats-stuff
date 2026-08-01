@@ -47,6 +47,7 @@ signal style_event(kind: String, amount: int)
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var health_bar: TextureProgressBar = $UI/Control/HealthBar
 @onready var slash: AnimatedSprite2D = $Slash
+@onready var bite_fx: AnimatedSprite2D = $Bite
 @onready var tail_sweep: AnimatedSprite2D = $TailSweep
 @onready var glare_eyes: Node2D = $GlareEyes
 
@@ -85,8 +86,10 @@ func _ready() -> void:
 	health_bar.value = health
 	glare_eyes.visible = false
 	slash.visible = false
+	bite_fx.visible = false
 	tail_sweep.visible = false
 	slash.animation_finished.connect(func(): slash.visible = false)
+	bite_fx.animation_finished.connect(func(): bite_fx.visible = false)
 	tail_sweep.animation_finished.connect(func(): tail_sweep.visible = false)
 
 func _physics_process(delta: float) -> void:
@@ -234,7 +237,7 @@ func _bite() -> void:
 	var aim := _aim()
 	last_direction = aim
 	invuln_timer = 0.0
-	_show_slash(aim, 1.55)
+	_show_bite(aim)
 	style_event.emit("bite", 8)
 	var kills: int = 0
 	for e in get_tree().get_nodes_in_group("enemies"):
@@ -310,6 +313,15 @@ func _show_slash(aim: Vector2, scale_mul: float) -> void:
 	slash.frame = 0
 	slash.visible = true
 	slash.play("slash")
+
+func _show_bite(aim: Vector2) -> void:
+	bite_fx.position = aim * 14.0
+	bite_fx.rotation = aim.angle()
+	bite_fx.flip_v = aim.x < 0.0
+	bite_fx.scale = Vector2(0.86, 0.86)
+	bite_fx.frame = 0
+	bite_fx.visible = true
+	bite_fx.play("bite")
 
 func _show_tail_sweep(aim: Vector2) -> void:
 	tail_sweep.position = aim * 12.0
