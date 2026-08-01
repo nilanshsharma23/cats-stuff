@@ -71,6 +71,11 @@ var external_knockback: Vector2 = Vector2.ZERO
 var external_knockback_timer: float = 0.0
 var glare_tween: Tween
 
+const CAT_DASH = preload("uid://capfj5y587nhw")
+const CAT_PARRY = preload("uid://igm67v3h80mk")
+const CAT_DIE = preload("uid://dlkb61t56j13g")
+const CAT_HURT = preload("uid://cdwakwq3on3im")
+
 func _ready() -> void:
 	add_to_group("player")
 	_load_profile()
@@ -151,6 +156,7 @@ func _physics_process(delta: float) -> void:
 		last_direction = input_direction
 
 	if Input.is_action_just_pressed("dash") and dash_cd_left <= 0.0:
+		SoundManager.play_sound_with_pitch(CAT_DASH, RandomNumberGenerator.new().randf_range(1.2, 0.8))
 		dash_direction = (input_direction if input_direction != Vector2.ZERO else last_direction).normalized()
 		last_direction = dash_direction
 		is_dashing = true
@@ -175,6 +181,7 @@ func _physics_process(delta: float) -> void:
 # Sekiro-style deflect: you must dash INTO a telegraphing enemy (dash aimed
 # toward it while its tell is on screen) to freeze it. Dodging away never parries.
 func _try_parry() -> void:
+	SoundManager.play_sound_with_pitch(CAT_PARRY, RandomNumberGenerator.new().randf_range(1.2, 0.8))
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e):
 			continue
@@ -333,7 +340,10 @@ func take_damage(amount: int) -> bool:
 	if health <= 0:
 		health = 0
 		die()
+		SoundManager.stop_music()
+		SoundManager.play_sound(CAT_DIE)
 		return true
+	SoundManager.play_sound_with_pitch(CAT_HURT, RandomNumberGenerator.new().randf_range(1.2, 0.8))
 	return false
 
 func die() -> void:

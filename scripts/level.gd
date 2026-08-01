@@ -143,6 +143,11 @@ var flash_rect: ColorRect
 var flash_tween: Tween
 var last_milestone: int = 0
 
+const WAVE_MUSIC = preload("uid://dwrvqub1b3dyr")
+const RAT_BOSS_1 = preload("uid://bhbk4b83r3n3r")
+const FROG_BOSS_2 = preload("uid://myjklip14q8g")
+const PIGEON_BOSS_3 = preload("uid://nx84smyo7dmp")
+
 func _ready() -> void:
 	get_tree().paused = false
 	# Defensive: a prior run that changed scene mid-effect could leave this
@@ -299,6 +304,7 @@ func _build_waves() -> void:
 				[["rat", 5], ["scurrier", 4]],
 				[["rat", 4], ["scurrier", 4], ["frog", 2]],
 			]
+		SoundManager.play_music(WAVE_MUSIC, 0, "Music")
 	elif level_id == 2:
 		waves = [
 			[["scurrier", 8], ["frog", 3]],
@@ -308,18 +314,21 @@ func _build_waves() -> void:
 			[["scurrier", 9], ["brute", 2], ["frog", 4]],
 			[["boss", 1], ["scurrier", 4]],
 		]
+		SoundManager.play_music(RAT_BOSS_1, 0, "Music")
 	elif level_id == 3:
 		waves = [
 			[["spitter", 4], ["brute", 2], ["scurrier", 4]],
 			[["scurrier", 9], ["spitter", 5], ["frog", 3]],
 			[["frog_boss", 1], ["rat", 5], ["scurrier", 2]],
 		]
+		SoundManager.play_music(FROG_BOSS_2, 0, "Music")
 	else:
 		waves = [
 			[["rat", 8], ["brute", 3], ["spitter", 4]],
 			[["scurrier", 9], ["spitter", 5], ["frog", 4]],
 			[["pigeon_boss", 1], ["scurrier", 4]],
 		]
+		SoundManager.play_music(PIGEON_BOSS_3, 0, "Music")
 
 func _is_boss_wave(index: int) -> bool:
 	if index < 0 or index >= waves.size():

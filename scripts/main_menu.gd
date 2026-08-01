@@ -15,6 +15,8 @@ var shop_text: Label
 var upgrade_button: Button
 var shop_status: Label
 
+const MAIN_MENU: AudioStream = preload("uid://b2vea5dv5llnp")
+
 func _ready() -> void:
 	get_tree().paused = false
 	Engine.time_scale = 1.0
@@ -28,6 +30,8 @@ func _ready() -> void:
 	$Center/Box/Shop.pressed.connect(_toggle_shop)
 	$Center/Box/Quit.pressed.connect(_on_quit)
 	$Center/Box/Play.grab_focus()
+	SoundManager.set_music_volume(0.5)
+	SoundManager.play_music(MAIN_MENU, 0, "Music")
 
 func _apply_pixel_font(node: Node) -> void:
 	if node is Control:
