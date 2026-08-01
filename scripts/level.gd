@@ -18,35 +18,35 @@ const UI_FONT: FontFile = preload("res://fonts/Pixellari.ttf")
 var ROSTER := {
 	"rat": {
 		"scene": "rat",
-		"cfg": {"max_health": 3, "move_speed": 108.0, "nibble_damage": 1,
+		"cfg": {"max_health": 4, "move_speed": 104.0, "nibble_damage": 1,
 			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 16}
 	},
 	"scurrier": {
 		"scene": "rat",
-		"cfg": {"max_health": 2, "move_speed": 146.0, "nibble_damage": 1,
-			"dash_chance": 0.72, "dash_cooldown_min": 1.0, "dash_cooldown_max": 1.8,
+		"cfg": {"max_health": 3, "move_speed": 132.0, "nibble_damage": 1,
+			"dash_chance": 0.62, "dash_cooldown_min": 1.2, "dash_cooldown_max": 2.2,
 			"tint": Color(0.72, 1.0, 0.55), "body_scale": 0.6, "score_value": 14}
 	},
 	"brute": {
 		"scene": "rat",
-		"cfg": {"max_health": 6, "move_speed": 66.0, "nibble_damage": 1,
+		"cfg": {"max_health": 7, "move_speed": 62.0, "nibble_damage": 1,
 			"nibble_range": 22.0, "dash_chance": 0.25, "knockback_resist": 0.6,
 			"tint": Color(1.0, 0.5, 0.42), "body_scale": 1.08, "score_value": 42}
 	},
 	"frog": {
 		"scene": "frog",
-		"cfg": {"max_health": 3, "move_speed": 76.0, "aoe_damage": 1,
+		"cfg": {"max_health": 4, "move_speed": 78.0, "aoe_damage": 1, "croak_cooldown": 2.55, "croak_range": 30.0, "bloodlust_speed_mul": 1.38,
 			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 24}
 	},
 	"spitter": {
 		"scene": "frog",
-		"cfg": {"max_health": 3, "move_speed": 88.0, "croak_cooldown": 1.55,
+		"cfg": {"max_health": 4, "move_speed": 82.0, "croak_cooldown": 1.9, "bloodlust_speed_mul": 1.18,
 			"croak_range": 54.0, "aoe_radius": 32.0, "croak_windup": 0.5,
 			"tint": Color(0.5, 0.82, 1.0), "body_scale": 0.7, "score_value": 30}
 	},
 	"boss": {
 		"scene": "rat",
-		"cfg": {"is_boss": true, "max_health": 50, "move_speed": 84.0,
+		"cfg": {"is_boss": true, "max_health": 54, "move_speed": 80.0,
 			"nibble_damage": 2, "nibble_range": 30.0, "nibble_interval": 0.55,
 			"dash_chance": 0.82, "dash_windup": 0.6, "dash_speed": 260.0,
 			"dash_cooldown_min": 1.0, "dash_cooldown_max": 1.8,
@@ -55,14 +55,14 @@ var ROSTER := {
 	},
 	"frog_boss": {
 		"scene": "frog_boss",
-		"cfg": {"is_boss": true, "max_health": 66, "move_speed": 54.0,
+		"cfg": {"is_boss": true, "max_health": 72, "move_speed": 56.0,
 			"hop_damage": 2, "hop_knockback": 360.0, "hop_radius": 24.0,
 			"aoe_damage": 1, "aoe_radius": 56.0, "tint": Color(0.56, 1.0, 0.5, 1.0),
 			"body_scale": 1.65, "score_value": 760}
 	},
 	"pigeon_boss": {
 		"scene": "pigeon_boss",
-		"cfg": {"is_boss": true, "max_health": 76, "move_speed": 56.0,
+		"cfg": {"is_boss": true, "max_health": 86, "move_speed": 54.0,
 			"circle_radius": 34.0, "cross_width": 12.0, "circle_damage": 1,
 			"cross_damage": 1, "tint": Color(1.0, 1.0, 1.0, 1.0),
 			"body_scale": 0.14, "score_value": 900}
@@ -91,6 +91,7 @@ var tutorial_step: int = 0
 var last_earned: int = 0
 var result_path: String = ""
 var reward_timer: float = 0.0
+var hitstop_id: int = 0
 
 var wave_label: Label
 var enemies_label: Label
@@ -269,6 +270,16 @@ func _flash(color: Color, strength: float) -> void:
 	flash_tween = create_tween()
 	flash_tween.tween_property(flash_rect, "modulate:a", 0.0, 0.3)
 
+func _hitstop(duration: float, scale_value: float) -> void:
+	if get_tree().paused:
+		return
+	hitstop_id += 1
+	var active_id: int = hitstop_id
+	Engine.time_scale = scale_value
+	await get_tree().create_timer(duration, true, false, true).timeout
+	if hitstop_id == active_id and not get_tree().paused:
+		Engine.time_scale = 1.0
+
 func _hype(text: String, color: Color) -> void:
 	banner.add_theme_color_override("font_color", color)
 	banner.text = text
@@ -329,38 +340,36 @@ func _build_waves() -> void:
 		if tutorial_enabled:
 			waves = [
 				[["rat", 3]],
-				[["rat", 4], ["scurrier", 3]],
-				[["rat", 4], ["scurrier", 4], ["frog", 1]],
+				[["rat", 4], ["scurrier", 2]],
+				[["rat", 3], ["scurrier", 3], ["frog", 1]],
 			]
 		else:
 			waves = [
-				[["rat", 5]],
-				[["rat", 5], ["scurrier", 4]],
-				[["rat", 4], ["scurrier", 4], ["frog", 2]],
+				[["rat", 4]],
+				[["rat", 4], ["scurrier", 2]],
+				[["rat", 3], ["scurrier", 3], ["frog", 1]],
 			]
 		SoundManager.play_music(WAVE_MUSIC, 0, "Music")
 	elif level_id == 2:
 		waves = [
-			[["scurrier", 8], ["frog", 3]],
-			[["rat", 7], ["brute", 1], ["frog", 3]],
-			[["scurrier", 8], ["spitter", 4]],
-			[["rat", 7], ["brute", 2], ["spitter", 3]],
-			[["scurrier", 9], ["brute", 2], ["frog", 4]],
-			[["boss", 1], ["scurrier", 4]],
+			[["rat", 5], ["frog", 2]],
+			[["scurrier", 5], ["frog", 3]],
+			[["rat", 4], ["brute", 1], ["spitter", 2]],
+			[["boss", 1], ["scurrier", 3]],
 		]
 		SoundManager.play_music(RAT_BOSS_1, 0, "Music")
 	elif level_id == 3:
 		waves = [
-			[["spitter", 4], ["brute", 2], ["scurrier", 4]],
-			[["scurrier", 9], ["spitter", 5], ["frog", 3]],
-			[["frog_boss", 1], ["rat", 5], ["scurrier", 2]],
+			[["spitter", 3], ["frog", 4]],
+			[["brute", 2], ["scurrier", 5], ["spitter", 3]],
+			[["frog_boss", 1], ["frog", 2]],
 		]
 		SoundManager.play_music(FROG_BOSS_2, 0, "Music")
 	else:
 		waves = [
-			[["rat", 8], ["brute", 3], ["spitter", 4]],
-			[["scurrier", 9], ["spitter", 5], ["frog", 4]],
-			[["pigeon_boss", 1], ["scurrier", 4]],
+			[["rat", 6], ["brute", 2], ["spitter", 3]],
+			[["scurrier", 7], ["frog", 3], ["spitter", 4]],
+			[["pigeon_boss", 1], ["scurrier", 3]],
 		]
 		SoundManager.play_music(PIGEON_BOSS_3, 0, "Music")
 
@@ -507,9 +516,9 @@ func _on_boss_died(boss: Node = null) -> void:
 func _award_wave_clear() -> void:
 	_flash(Color(1.0, 0.9, 0.5), 0.28)
 	_shake(1.6)
-	var bonus: int = 28 + wave_index * 14 + _rank_bonus()
+	var bonus: int = 20 + wave_index * 10 + _rank_bonus()
 	score += bonus
-	style_meter += 16.0
+	style_meter += 10.0
 	no_glare_chain += 1
 	_set_reward("Wave clear +%d  Rank %s" % [bonus, _style_rank()])
 
@@ -524,13 +533,13 @@ func _wave_enemy_count(index: int) -> int:
 	return total
 
 func _hp_cost() -> int:
-	return 24 + hp_buys * 18
+	return 18 + hp_buys * 14
 
 func _dash_cost() -> int:
-	return 72 + dash_buys * 55
+	return 82 + dash_buys * 68
 
 func _leer_cost() -> int:
-	return 95 + leer_buys * 75
+	return 110 + leer_buys * 90
 
 func _start_break() -> void:
 	if cleared:
@@ -700,21 +709,29 @@ func _toggle_pause() -> void:
 		return
 	var paused := not get_tree().paused
 	get_tree().paused = paused
+	hitstop_id += 1
+	Engine.time_scale = 1.0
 	pause_panel.visible = paused
 	_sync_fight_ui()
 	if paused:
 		pause_resume.grab_focus()
 
 func _resume_game() -> void:
+	hitstop_id += 1
+	Engine.time_scale = 1.0
 	get_tree().paused = false
 	pause_panel.visible = false
 	_sync_fight_ui()
 
 func _restart() -> void:
+	hitstop_id += 1
+	Engine.time_scale = 1.0
 	get_tree().paused = false
 	get_tree().reload_current_scene()
 
 func _continue() -> void:
+	hitstop_id += 1
+	Engine.time_scale = 1.0
 	get_tree().paused = false
 	if result_path != "":
 		get_tree().change_scene_to_file(result_path)
@@ -722,6 +739,8 @@ func _continue() -> void:
 		get_tree().change_scene_to_file("res://scenes/level1.tscn")
 
 func _to_menu() -> void:
+	hitstop_id += 1
+	Engine.time_scale = 1.0
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
@@ -733,6 +752,7 @@ func _show_banner(text: String) -> void:
 
 func _on_style_event(kind: String, amount: int) -> void:
 	if kind == "multi":
+		_hitstop(0.05, 0.08)
 		_multikill(amount)
 		return
 	# Plain dashing is free movement - it neither builds nor breaks the combo.
@@ -747,6 +767,7 @@ func _on_style_event(kind: String, amount: int) -> void:
 			_set_reward("LEER! Marked prey - hit them to EXECUTE.")
 			_flash(Color(1.0, 0.2, 0.25), 0.22)
 		if kind == "damage_taken":
+			_hitstop(0.035, 0.12)
 			_flash(Color(1.0, 0.2, 0.2), 0.5)
 			_shake(2.6)
 			no_glare_chain = 0
@@ -760,13 +781,17 @@ func _on_style_event(kind: String, amount: int) -> void:
 	style_meter += amount * multiplier
 	style_timeout = 3.5
 	if kind == "paw_hit":
+		_hitstop(0.018, 0.18)
 		_shake(0.7)
 	elif kind == "enemy_down":
+		_hitstop(0.03, 0.12)
 		_shake(0.9)
 	elif kind == "bite":
+		_hitstop(0.055, 0.08)
 		_shake(2.4)
 		_flash(Color(1.0, 0.9, 0.7), 0.22)
 	elif kind == "tail":
+		_hitstop(0.04, 0.1)
 		_shake(1.7)
 	var scored: int = maxi(1, int(amount * multiplier * 0.8))
 	score += scored
@@ -775,11 +800,13 @@ func _on_style_event(kind: String, amount: int) -> void:
 		_flash(Color(1, 1, 1), 0.18)
 		_shake(1.4)
 	elif kind == "execute":
+		_hitstop(0.065, 0.06)
 		_set_reward("EXECUTE +%d  Chain x%d" % [scored, no_glare_chain])
 		_hype("EXECUTE", Color(1.0, 0.3, 0.35))
 		_flash(Color(1.0, 0.35, 0.4), 0.45)
 		_shake(2.6)
 	elif kind == "parry":
+		_hitstop(0.07, 0.06)
 		_set_reward("PARRY! Frozen +%d  Chain x%d" % [scored, no_glare_chain])
 		_hype("PARRY!", Color(0.4, 0.92, 1.0))
 		_flash(Color(0.55, 0.92, 1.0), 0.7)
@@ -1068,6 +1095,8 @@ func _build_result_panel() -> void:
 	box.add_child(result_menu)
 
 func _finish_run(title: String, success: bool) -> void:
+	hitstop_id += 1
+	Engine.time_scale = 1.0
 	_bank_run()
 	_hide_hud()
 	result_title.text = title
@@ -1081,8 +1110,8 @@ func _finish_run(title: String, success: bool) -> void:
 
 func _result_summary(success: bool) -> String:
 	var rank := _style_rank()
-	var no_glare_bonus: int = 35 if glare_uses == 0 else maxi(0, 20 - glare_uses * 8)
-	var clear_bonus: int = 65 if success else 0
+	var no_glare_bonus: int = 25 if glare_uses == 0 else maxi(0, 16 - glare_uses * 7)
+	var clear_bonus: int = 50 if success else 0
 	return "Rank %s   Score %d   Kills %d\nNo-glare bonus %d   Clear bonus %d\nCoins earned +%d   Total %d" % [rank, score, kills, no_glare_bonus, clear_bonus, last_earned, coins]
 
 func _build_shop_panel() -> void:
@@ -1294,9 +1323,9 @@ func _bank_run() -> void:
 	if profile_saved:
 		return
 	profile_saved = true
-	var no_glare_bonus: int = 35 if glare_uses == 0 else maxi(0, 20 - glare_uses * 8)
-	var clear_bonus: int = 65 if cleared else 0
-	last_earned = maxi(0, int(score * 0.18) + int(style_meter * _rank_coin_multiplier() * 0.35) + no_glare_bonus + clear_bonus)
+	var no_glare_bonus: int = 25 if glare_uses == 0 else maxi(0, 16 - glare_uses * 7)
+	var clear_bonus: int = 50 if cleared else 0
+	last_earned = maxi(0, int(score * 0.12) + int(style_meter * _rank_coin_multiplier() * 0.25) + no_glare_bonus + clear_bonus)
 	coins += last_earned
 	best_record = max(best_record, score)
 	_save_profile_values()

@@ -3,36 +3,36 @@ extends CharacterBody2D
 signal died
 signal style_event(kind: String, amount: int)
 
-@export var speed: int = 112
-@export var max_health: int = 10
-@export var dash_speed: float = 300.0
-@export var dash_duration: float = 0.16
-@export var dash_cooldown: float = 0.30
+@export var speed: int = 106
+@export var max_health: int = 9
+@export var dash_speed: float = 282.0
+@export var dash_duration: float = 0.14
+@export var dash_cooldown: float = 0.42
 
 # Light attack - paw swipe (left mouse). Low damage: basics take 2-3.
 @export var paw_damage: int = 1
-@export var paw_range: float = 42.0
+@export var paw_range: float = 39.0
 @export var paw_arc: float = -0.25
-@export var paw_cooldown: float = 0.18
-@export var paw_knockback: float = 150.0
+@export var paw_cooldown: float = 0.26
+@export var paw_knockback: float = 118.0
 
 # Heavy attack - bite (right mouse tap). Roots the cat for a beat, leaving it
 # vulnerable, but one-shots basics and makes them bleed.
-@export var bite_damage: int = 3
-@export var bite_range: float = 40.0
+@export var bite_damage: int = 2
+@export var bite_range: float = 37.0
 @export var bite_arc: float = -0.1
-@export var bite_lock: float = 0.72
-@export var bite_cooldown: float = 1.45
+@export var bite_lock: float = 0.86
+@export var bite_cooldown: float = 2.1
 @export var bite_knockback: float = 120.0
 @export var bite_bleed_dur: float = 5.0
-@export var bite_bleed_dps: float = 1.5
+@export var bite_bleed_dps: float = 1.0
 
 # Tail sweep - hold right mouse. Big knockback, little damage.
 @export var tail_damage: int = 1
-@export var tail_range: float = 50.0
+@export var tail_range: float = 47.0
 @export var tail_arc: float = -0.4
-@export var tail_knockback: float = 420.0
-@export var tail_cooldown: float = 0.7
+@export var tail_knockback: float = 470.0
+@export var tail_cooldown: float = 1.15
 @export var tail_hold_threshold: float = 0.32
 
 # Leer (E) - stun and mark a pack for execute setups.
@@ -42,7 +42,7 @@ signal style_event(kind: String, amount: int)
 @export var leer_cooldown: float = 5.8
 @export var leer_show: float = 0.5
 
-@export var invuln_time: float = 0.55
+@export var invuln_time: float = 0.42
 
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var health_bar: TextureProgressBar = $UI/Control/HealthBar
@@ -215,7 +215,7 @@ func _paw() -> void:
 		var to_e: Vector2 = e.global_position - global_position
 		if to_e.length() <= paw_range and aim.dot(to_e.normalized()) > paw_arc:
 			var marked: bool = e.has_method("is_marked") and e.is_marked()
-			var damage: int = paw_damage * 2 if marked else paw_damage
+			var damage: int = _damage_for(e, "paw", paw_damage, marked)
 			var killed: bool = e.take_damage(damage)
 			style_event.emit("paw_hit", 4)
 			if killed:
@@ -243,7 +243,8 @@ func _bite() -> void:
 		var to_e: Vector2 = e.global_position - global_position
 		if to_e.length() <= bite_range and aim.dot(to_e.normalized()) > bite_arc:
 			var marked: bool = e.has_method("is_marked") and e.is_marked()
-			var killed: bool = e.take_damage(bite_damage)
+			var damage: int = _damage_for(e, "bite", bite_damage, marked)
+			var killed: bool = e.take_damage(damage)
 			if not killed and e.has_method("bleed"):
 				e.bleed(bite_bleed_dur, bite_bleed_dps)
 			if killed:
@@ -266,9 +267,40 @@ func _tail() -> void:
 			continue
 		var to_e: Vector2 = e.global_position - global_position
 		if to_e.length() <= tail_range and aim.dot(to_e.normalized()) > tail_arc:
-			e.take_damage(tail_damage)
+			var damage: int = _damage_for(e, "tail", tail_damage, false)
+			e.take_damage(damage)
 			if e.has_method("knockback"):
 				e.knockback(to_e.normalized() * tail_knockback)
+
+func _damage_for(enemy: Node, move: String, base_damage: int, marked: bool) -> int:
+	var boss: bool = enemy.is_in_group("boss")
+	var rat: bool = enemy.is_in_group("rats")
+	var frog: bool = enemy.is_in_group("frogs")
+	var damage: int = base_damage
+	if move == "paw":
+		if rat and not boss:
+			damage = 2
+		elif frog:
+			damage = 1
+		elif boss:
+			damage = 1
+	elif move == "tail":
+		if frog and not boss:
+			damage = 3
+		elif boss:
+			damage = 1
+		else:
+			damage = 1
+	elif move == "bite":
+		if boss:
+			damage = 8
+		elif frog and not boss:
+			damage = 1
+		else:
+			damage = 2
+	if marked and move == "paw":
+		damage += 1
+	return max(1, damage)
 
 func _show_slash(aim: Vector2, scale_mul: float) -> void:
 	slash.position = aim * 13.0
@@ -373,15 +405,15 @@ func buy_health() -> void:
 	health_bar.value = health
 
 func upgrade_dash() -> void:
-	dash_speed += 45.0
-	dash_duration = minf(dash_duration + 0.02, 0.4)
-	dash_cooldown = maxf(dash_cooldown - 0.04, 0.12)
+	dash_speed += 25.0
+	dash_duration = minf(dash_duration + 0.01, 0.24)
+	dash_cooldown = maxf(dash_cooldown - 0.025, 0.28)
 
 func upgrade_leer() -> void:
-	leer_stun += 0.15
-	mark_duration += 1.0
-	leer_range += 8.0
-	leer_cooldown = maxf(leer_cooldown - 0.45, 4.4)
+	leer_stun += 0.1
+	mark_duration += 0.65
+	leer_range += 5.0
+	leer_cooldown = maxf(leer_cooldown - 0.3, 5.0)
 
 func _load_profile() -> void:
 	var config := ConfigFile.new()
