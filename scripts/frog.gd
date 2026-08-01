@@ -171,6 +171,7 @@ func take_damage(amount: int) -> bool:
     if dead:
         return false
     health -= amount
+    _hit_feedback()
     if health <= 0:
         health = 0
         _die()
@@ -179,6 +180,13 @@ func take_damage(amount: int) -> bool:
     is_croaking = false
     queue_redraw()
     return false
+
+func _hit_feedback() -> void:
+    var base := Vector2(body_scale, body_scale)
+    anim.scale = base * 1.28
+    create_tween().tween_property(anim, "scale", base, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+    anim.self_modulate = Color(1.7, 1.7, 1.7)
+    create_tween().tween_property(anim, "self_modulate", tint, 0.14)
 
 func _die() -> void:
     dead = true

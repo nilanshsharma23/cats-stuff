@@ -97,6 +97,15 @@ var boss_panel: Control
 var boss_fill: ColorRect
 var boss_bar_width: float = 160.0
 
+# --- Game feel ("juice") ---
+var cam: Camera2D
+var shake_amt: float = 0.0
+var flash_rect: ColorRect
+var flash_tween: Tween
+var hitstop_token: int = 0
+var last_impact_ms: int = 0
+var last_milestone: int = 0
+
 func _ready() -> void:
 	get_tree().paused = false
 	rng.randomize()
@@ -104,8 +113,10 @@ func _ready() -> void:
 	tutorial_enabled = bool(get_tree().get_meta("tutorial_enabled", false))
 	get_tree().set_meta("tutorial_enabled", false)
 	banner.modulate.a = 0.0
+	_setup_camera()
 	_build_result_panel()
 	_build_hud()
+	_build_flash()
 	_build_boss_bar()
 	_build_shop_panel()
 	_build_tutorial_panel()
@@ -130,8 +141,96 @@ func _process(delta: float) -> void:
 		reward_label.modulate.a = clamp(reward_timer, 0.0, 1.0)
 	else:
 		reward_label.modulate.a = 0.0
+	_update_shake(delta)
 	_update_boss_bar()
 	_refresh_hud()
+
+# --- Game feel helpers -------------------------------------------------------
+
+func _setup_camera() -> void:
+	cam = Camera2D.new()
+	cam.position = Vector2(128, 72)
+	# A hair of zoom-in gives margin so screen shake never bares the arena edge.
+	cam.zoom = Vector2(1.04, 1.04)
+	add_child(cam)
+	cam.make_current()
+
+func _build_flash() -> void:
+	flash_rect = ColorRect.new()
+	flash_rect.name = "Flash"
+	flash_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flash_rect.color = Color(1, 1, 1, 1)
+	flash_rect.modulate.a = 0.0
+	$UI.add_child(flash_rect)
+
+func _update_shake(delta: float) -> void:
+	if cam == null:
+		return
+	if shake_amt > 0.05:
+		shake_amt = max(shake_amt - 26.0 * delta, 0.0)
+		cam.offset = Vector2(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)) * shake_amt
+	elif cam.offset != Vector2.ZERO:
+		cam.offset = Vector2.ZERO
+
+func _shake(amount: float) -> void:
+	shake_amt = min(max(shake_amt, amount), 4.5)
+
+func _flash(color: Color, strength: float) -> void:
+	if flash_rect == null:
+		return
+	if flash_tween != null and flash_tween.is_valid():
+		flash_tween.kill()
+	flash_rect.color = Color(color.r, color.g, color.b, 1.0)
+	flash_rect.modulate.a = clamp(strength, 0.0, 1.0)
+	flash_tween = create_tween()
+	flash_tween.tween_property(flash_rect, "modulate:a", 0.0, 0.3)
+
+# Freeze the whole game for a beat (hitstop), optionally trailing into a short
+# slow-mo, then snap back. The token guards against overlapping calls.
+func _timefreeze(freeze_dur: float, slow_dur: float = 0.0, slow_scale: float = 0.4) -> void:
+	hitstop_token += 1
+	var my := hitstop_token
+	Engine.time_scale = 0.0
+	await get_tree().create_timer(freeze_dur, true, false, true).timeout
+	if my != hitstop_token:
+		return
+	if slow_dur > 0.0:
+		Engine.time_scale = slow_scale
+		await get_tree().create_timer(slow_dur, true, false, true).timeout
+		if my != hitstop_token:
+			return
+	Engine.time_scale = 1.0
+
+func _impact_ready(gap_ms: int) -> bool:
+	var now := Time.get_ticks_msec()
+	if now - last_impact_ms < gap_ms:
+		return false
+	last_impact_ms = now
+	return true
+
+func _hype(text: String, color: Color) -> void:
+	banner.add_theme_color_override("font_color", color)
+	banner.text = text
+	banner.modulate.a = 1.0
+	create_tween().tween_property(banner, "modulate:a", 0.0, 1.1)
+
+func _multikill(n: int) -> void:
+	var names := {2: "DOUBLE KILL", 3: "TRIPLE KILL", 4: "QUAD KILL", 5: "PENTA KILL"}
+	_hype(names.get(n, "MASSACRE"), Color(1.0, 0.72, 0.2))
+	_flash(Color(1.0, 0.85, 0.45), 0.32 + 0.05 * n)
+	_shake(2.2 + n * 0.4)
+	_timefreeze(0.06 + min(n, 6) * 0.012)
+	score += n * 8
+
+func _check_combo_milestone() -> void:
+	var tiers := {10: "COMBO x10", 20: "RAMPAGE", 30: "UNSTOPPABLE", 40: "GODLIKE", 50: "LEGENDARY"}
+	if tiers.has(no_glare_chain) and no_glare_chain != last_milestone:
+		last_milestone = no_glare_chain
+		_hype(tiers[no_glare_chain], Color(1.0, 0.4, 0.9))
+		_flash(Color(1.0, 0.4, 0.9), 0.5)
+		_shake(2.8)
+		_timefreeze(0.06)
 
 func _build_waves() -> void:
 	# Level 1: clear 3 waves to advance. Level 2: 5 waves, then the boss.
@@ -231,16 +330,23 @@ func _on_enemy_died(enemy: Node) -> void:
 func _on_boss_died() -> void:
 	if cleared:
 		return
+	cleared = true
 	boss_active = false
 	kills += 1
 	score += 600
-	style_meter += 40.0
+	style_meter += 60.0
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e) and e != null and not e.is_in_group("boss"):
 			e.queue_free()
-	_level_cleared()
+	_hype("BOSS DOWN", Color(1.0, 0.85, 0.3))
+	_flash(Color(1, 1, 1), 0.95)
+	_shake(4.5)
+	await _timefreeze(0.45, 0.5, 0.3)
+	_finish_run("VICTORY!", true)
 
 func _award_wave_clear() -> void:
+	_flash(Color(1.0, 0.9, 0.5), 0.28)
+	_shake(1.6)
 	var bonus: int = 28 + wave_index * 14 + _rank_bonus()
 	score += bonus
 	style_meter += 16.0
@@ -253,6 +359,9 @@ func _level_cleared() -> void:
 	_finish_run("VICTORY!" if final else "LEVEL CLEAR", true)
 
 func _on_cat_died() -> void:
+	_flash(Color(0.8, 0.05, 0.1), 0.85)
+	_shake(4.0)
+	await _timefreeze(0.35, 0.45, 0.25)
 	_finish_run("YOU GOT CLIPPED", false)
 
 func _input(event: InputEvent) -> void:
@@ -276,32 +385,54 @@ func _to_menu() -> void:
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 func _show_banner(text: String) -> void:
+	banner.add_theme_color_override("font_color", Color(1, 0.9, 0.5))
 	banner.text = text
 	banner.modulate.a = 1.0
 	create_tween().tween_property(banner, "modulate:a", 0.0, 1.4)
 
 func _on_style_event(kind: String, amount: int) -> void:
+	if kind == "multi":
+		_multikill(amount)
+		return
 	if amount < 0:
 		if kind == "glare":
 			glare_uses += 1
+			_set_reward("Glare saved you. Style taxed.")
+		if kind == "damage_taken":
+			_flash(Color(1.0, 0.2, 0.2), 0.5)
+			_shake(2.6)
+			if _impact_ready(120):
+				_timefreeze(0.05)
 		no_glare_chain = 0
+		last_milestone = 0
 		style_meter = max(style_meter + amount, 0.0)
 		style_timeout = 1.0
-		if kind == "glare":
-			_set_reward("Glare saved you. Style taxed.")
 		return
 	if kind == "paw_hit" or kind == "paw_kill" or kind == "dash" or kind == "enemy_down" or kind == "parry":
 		no_glare_chain += 1
 	var multiplier: float = 1.0 + mini(no_glare_chain, 24) * 0.06
 	style_meter += amount * multiplier
 	style_timeout = 3.5
+	if kind == "paw_hit":
+		_shake(0.7)
+	elif kind == "enemy_down":
+		_shake(0.9)
 	if kind != "dash":
 		var scored: int = maxi(1, int(amount * multiplier * 0.8))
 		score += scored
 		if kind == "paw_kill":
 			_set_reward("Clean kill +%d  Chain x%d" % [scored, no_glare_chain])
+			_flash(Color(1, 1, 1), 0.18)
+			_shake(1.4)
+			if _impact_ready(70):
+				_timefreeze(0.045)
 		elif kind == "parry":
 			_set_reward("PARRY! Frozen +%d  Chain x%d" % [scored, no_glare_chain])
+			_hype("PARRY!", Color(0.4, 0.92, 1.0))
+			_flash(Color(0.55, 0.92, 1.0), 0.7)
+			_shake(3.6)
+			_timefreeze(0.11, 0.16, 0.38)
+	_check_combo_milestone()
 
 func _style_rank() -> String:
 	if style_meter >= 360.0:

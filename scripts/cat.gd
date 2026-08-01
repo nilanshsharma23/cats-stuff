@@ -124,6 +124,7 @@ func _paw() -> void:
 	paw_particles.position = aim * 12.0
 	paw_particles.restart()
 	paw_particles.emitting = true
+	var kills: int = 0
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e) or not e.has_method("take_damage"):
 			continue
@@ -132,9 +133,12 @@ func _paw() -> void:
 			var killed: bool = e.take_damage(paw_damage)
 			style_event.emit("paw_hit", 4)
 			if killed:
+				kills += 1
 				style_event.emit("paw_kill", 16)
 			if e.has_method("knockback"):
 				e.knockback(to_e.normalized() * paw_knockback)
+	if kills >= 2:
+		style_event.emit("multi", kills)
 
 func _glare() -> void:
 	glare_cd = glare_cooldown
