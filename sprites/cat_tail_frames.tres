@@ -1,0 +1,30 @@
+[gd_resource type="SpriteFrames" format=3 uid="uid://cotp8efqv5t5m"]
+
+[ext_resource type="Texture2D" path="res://sprites/cat attack tail 1.png" id="1"]
+[ext_resource type="Texture2D" path="res://sprites/Cat attack tail 2.png" id="2"]
+[ext_resource type="Texture2D" path="res://sprites/cat attack tail 3.png" id="3"]
+[ext_resource type="Texture2D" path="res://sprites/cat attack tail 4.png" id="4"]
+[ext_resource type="Texture2D" path="res://sprites/cat attack tail 5.png" id="5"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5")
+}],
+"loop": false,
+"name": &"tail",
+"speed": 24.0
+}]

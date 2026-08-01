@@ -114,8 +114,16 @@ var boss_panel: Control
 var boss_name_label: Label
 var boss_fill: ColorRect
 var boss_bar_width: float = 160.0
-var ability_panel: VBoxContainer
+var ability_panel: HBoxContainer
 var ability_slots: Dictionary = {}
+var hud_panel: ColorRect
+var player_panel: ColorRect
+var score_panel: ColorRect
+var pause_panel: Control
+var pause_resume: Button
+var pause_retry: Button
+var pause_menu: Button
+var waiting_for_wave_start: bool = false
 
 # Between-wave break shop
 var break_panel: Control
@@ -149,6 +157,7 @@ const FROG_BOSS_2 = preload("uid://myjklip14q8g")
 const PIGEON_BOSS_3 = preload("uid://nx84smyo7dmp")
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	get_tree().paused = false
 	# Defensive: a prior run that changed scene mid-effect could leave this
 	# stuck, freezing the whole game. Always start at full speed.
@@ -166,6 +175,7 @@ func _ready() -> void:
 	_build_boss_bar()
 	_build_shop_panel()
 	_build_break_panel()
+	_build_pause_panel()
 	_build_tutorial_panel()
 	_apply_pixel_font($UI)
 	var cat := get_tree().get_first_node_in_group("player")
@@ -176,10 +186,14 @@ func _ready() -> void:
 			cat.style_event.connect(_on_style_event)
 	_build_waves()
 	_next_wave()
+	_sync_fight_ui()
 	if tutorial_enabled:
 		_show_tutorial_step()
 
 func _process(delta: float) -> void:
+	if get_tree().paused:
+		_sync_fight_ui()
+		return
 	if style_timeout > 0.0:
 		style_timeout -= delta
 	else:
@@ -193,6 +207,26 @@ func _process(delta: float) -> void:
 	_update_boss_bar()
 	_update_ability_bar()
 	_refresh_hud()
+	_sync_fight_ui()
+
+func _is_fight_active() -> bool:
+	return not cleared and not get_tree().paused and (_live_enemy_count() > 0 or boss_active)
+
+func _set_player_health_visible(shown: bool) -> void:
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat != null and cat.has_node("UI/Control"):
+		cat.get_node("UI/Control").visible = shown
+
+func _sync_fight_ui() -> void:
+	var shown := _is_fight_active()
+	_set_player_health_visible(shown)
+	for n in [hud_panel, score_panel, player_panel, wave_label, score_label, combo_label, ability_panel]:
+		if n != null:
+			n.visible = shown
+	if enemies_label != null:
+		enemies_label.visible = false
+	if reward_label != null:
+		reward_label.visible = shown and reward_timer > 0.0
 
 # --- Game feel helpers -------------------------------------------------------
 
@@ -268,7 +302,7 @@ func _spawn_popup(pos: Vector2, text: String) -> void:
 	t.tween_callback(l.queue_free)
 
 func _hide_hud() -> void:
-	for n in [wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel, ability_panel]:
+	for n in [hud_panel, score_panel, player_panel, wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel, ability_panel]:
 		if n != null:
 			n.visible = false
 	var cat := get_tree().get_first_node_in_group("player")
@@ -501,13 +535,15 @@ func _leer_cost() -> int:
 func _start_break() -> void:
 	if cleared:
 		return
+	waiting_for_wave_start = true
 	var next_i := wave_index + 1
 	if _is_boss_wave(next_i):
-		break_info.text = "Catch your breath - the BOSS is next. Spend your coins!"
+		break_info.text = "Boss next. Spend coins, then press any key."
 	else:
-		break_info.text = "Nice clear! Chill a sec. Next wave: %d foes incoming." % _wave_enemy_count(next_i)
+		break_info.text = "Nice clear! Next wave has %d foes. Press any key when ready." % _wave_enemy_count(next_i)
 	break_status.text = ""
 	_refresh_break()
+	_sync_fight_ui()
 	break_panel.visible = true
 	get_tree().paused = true
 
@@ -562,16 +598,17 @@ func _buy_leer() -> void:
 	_refresh_break()
 	_refresh_hud()
 
-func _on_fight() -> void:
+func _start_waited_wave() -> void:
+	if not waiting_for_wave_start:
+		return
+	waiting_for_wave_start = false
 	break_panel.visible = false
 	get_tree().paused = false
-	_begin_countdown()
+	_next_wave()
+	_sync_fight_ui()
 
-func _begin_countdown() -> void:
-	_hype("GET READY", Color(1.0, 0.85, 0.35))
-	await get_tree().create_timer(2.5).timeout
-	if not cleared:
-		_next_wave()
+func _on_fight() -> void:
+	_start_waited_wave()
 
 func _build_break_panel() -> void:
 	break_panel = Control.new()
@@ -623,9 +660,12 @@ func _build_break_panel() -> void:
 	break_status.add_theme_font_size_override("font_size", 8)
 	break_status.add_theme_color_override("font_color", Color(0.5, 0.95, 1.0, 1))
 	box.add_child(break_status)
-	var fight := _make_button("FIGHT ->")
-	fight.pressed.connect(_on_fight)
-	box.add_child(fight)
+	var hint := Label.new()
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.add_theme_font_size_override("font_size", 9)
+	hint.add_theme_color_override("font_color", Color(1.0, 0.84, 0.35, 1.0))
+	hint.text = "PRESS ANY KEY"
+	box.add_child(hint)
 	$UI.add_child(break_panel)
 
 func _level_cleared() -> void:
@@ -640,9 +680,35 @@ func _on_cat_died() -> void:
 	_finish_run("YOU GOT CLIPPED", false)
 
 func _input(event: InputEvent) -> void:
-	if event.is_action_pressed("restart"):
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		if key_event.pressed and not key_event.echo:
+			if waiting_for_wave_start and break_panel != null and break_panel.visible and not shop_panel.visible:
+				_start_waited_wave()
+				get_viewport().set_input_as_handled()
+				return
+			if key_event.keycode == KEY_ESCAPE or key_event.physical_keycode == KEY_ESCAPE:
+				_toggle_pause()
+				get_viewport().set_input_as_handled()
+				return
+	if event.is_action_pressed("restart") and (pause_panel == null or not pause_panel.visible):
 		get_tree().paused = false
 		get_tree().reload_current_scene()
+
+func _toggle_pause() -> void:
+	if cleared or game_over.visible or tutorial_panel.visible or break_panel.visible or shop_panel.visible:
+		return
+	var paused := not get_tree().paused
+	get_tree().paused = paused
+	pause_panel.visible = paused
+	_sync_fight_ui()
+	if paused:
+		pause_resume.grab_focus()
+
+func _resume_game() -> void:
+	get_tree().paused = false
+	pause_panel.visible = false
+	_sync_fight_ui()
 
 func _restart() -> void:
 	get_tree().paused = false
@@ -721,91 +787,93 @@ func _on_style_event(kind: String, amount: int) -> void:
 	_check_combo_milestone()
 
 func _style_rank() -> String:
-	if style_meter >= 360.0:
-		return "SSS"
+	if style_meter >= 560.0:
+		return "SS - Ssuper Smexxy"
+	if style_meter >= 390.0:
+		return "S - Smexy"
 	if style_meter >= 260.0:
-		return "SS"
-	if style_meter >= 175.0:
-		return "S"
-	if style_meter >= 105.0:
-		return "A"
-	if style_meter >= 55.0:
-		return "B"
-	if style_meter >= 20.0:
-		return "C"
-	return "D"
+		return "A - Awe"
+	if style_meter >= 150.0:
+		return "B - Blowin' up"
+	if style_meter >= 70.0:
+		return "C - Comeback?"
+	return "D - Dumbahh"
 
 func _rank_bonus() -> int:
 	var rank := _style_rank()
-	if rank == "SSS":
+	if rank == "SS - Ssuper Smexxy":
 		return 90
-	if rank == "SS":
-		return 70
-	if rank == "S":
-		return 52
-	if rank == "A":
-		return 34
-	if rank == "B":
-		return 20
-	if rank == "C":
+	if rank == "S - Smexy":
+		return 62
+	if rank == "A - Awe":
+		return 42
+	if rank == "B - Blowin' up":
+		return 24
+	if rank == "C - Comeback?":
 		return 10
 	return 0
 
 func _rank_coin_multiplier() -> float:
 	var rank := _style_rank()
-	if rank == "SSS":
-		return 1.25
-	if rank == "SS":
-		return 1.05
-	if rank == "S":
-		return 0.85
-	if rank == "A":
+	if rank == "SS - Ssuper Smexxy":
+		return 1.08
+	if rank == "S - Smexy":
+		return 0.86
+	if rank == "A - Awe":
 		return 0.62
-	if rank == "B":
-		return 0.45
-	if rank == "C":
-		return 0.3
-	return 0.18
+	if rank == "B - Blowin' up":
+		return 0.42
+	if rank == "C - Comeback?":
+		return 0.24
+	return 0.12
 
 func _build_hud() -> void:
-	wave_label = _hud_label(Vector2(150, 6), Vector2(100, 12), Color(0.95, 0.92, 0.7, 1.0), 10, HORIZONTAL_ALIGNMENT_RIGHT)
-	enemies_label = _hud_label(Vector2(150, 19), Vector2(100, 10), Color(1.0, 0.62, 0.55, 1.0), 9, HORIZONTAL_ALIGNMENT_RIGHT)
-	combo_label = _hud_label(Vector2(6, 118), Vector2(140, 10), Color(1.0, 0.82, 0.25, 1.0), 9, HORIZONTAL_ALIGNMENT_LEFT)
-	score_label = _hud_label(Vector2(6, 130), Vector2(200, 10), Color(0.85, 0.9, 1.0, 1.0), 8, HORIZONTAL_ALIGNMENT_LEFT)
-	reward_label = _hud_label(Vector2(28, 98), Vector2(200, 12), Color(0.5, 1.0, 0.85, 1.0), 8, HORIZONTAL_ALIGNMENT_CENTER)
+	hud_panel = _hud_plate("HudTop", Vector2(76, 4), Vector2(104, 16), Color(0.03, 0.035, 0.045, 0.76))
+	score_panel = _hud_plate("HudScore", Vector2(184, 5), Vector2(66, 17), Color(0.04, 0.04, 0.05, 0.82))
+	player_panel = _hud_plate("PlayerCard", Vector2(8, 111), Vector2(84, 27), Color(0.035, 0.04, 0.055, 0.86))
+	wave_label = _hud_label(Vector2(82, 7), Vector2(92, 9), Color(0.95, 0.92, 0.74, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
+	score_label = _hud_label(Vector2(188, 8), Vector2(58, 10), Color(0.95, 0.95, 1.0, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
+	combo_label = _hud_label(Vector2(13, 117), Vector2(74, 16), Color(1.0, 0.82, 0.25, 1.0), 7, HORIZONTAL_ALIGNMENT_LEFT)
+	enemies_label = _hud_label(Vector2(0, 0), Vector2(1, 1), Color(1.0, 0.62, 0.55, 1.0), 7, HORIZONTAL_ALIGNMENT_RIGHT)
+	enemies_label.visible = false
+	reward_label = _hud_label(Vector2(54, 91), Vector2(148, 12), Color(0.5, 1.0, 0.85, 1.0), 8, HORIZONTAL_ALIGNMENT_CENTER)
 	reward_label.modulate.a = 0.0
 	_refresh_hud()
 
 func _build_ability_bar() -> void:
 	ability_slots.clear()
-	ability_panel = VBoxContainer.new()
+	ability_panel = HBoxContainer.new()
 	ability_panel.name = "AbilityBar"
-	ability_panel.position = Vector2(7, 44)
-	ability_panel.add_theme_constant_override("separation", 2)
+	ability_panel.position = Vector2(69, 122)
+	ability_panel.add_theme_constant_override("separation", 3)
 	$UI.add_child(ability_panel)
-	_add_ability_slot("PAW", "LMB", Color(0.48, 1.0, 0.66, 0.95))
-	_add_ability_slot("DASH", "SPC", Color(0.62, 0.9, 1.0, 0.95))
-	_add_ability_slot("BITE", "RMB", Color(1.0, 0.45, 0.34, 0.95))
-	_add_ability_slot("TAIL", "HOLD", Color(0.5, 0.78, 1.0, 0.95))
+	_add_ability_slot("PAW", "M1", Color(0.48, 1.0, 0.66, 0.95))
+	_add_ability_slot("DASH", "SP", Color(0.62, 0.9, 1.0, 0.95))
+	_add_ability_slot("BITE", "M2", Color(1.0, 0.45, 0.34, 0.95))
+	_add_ability_slot("TAIL", "H", Color(0.5, 0.78, 1.0, 0.95))
 	_add_ability_slot("GLARE", "E", Color(1.0, 0.28, 0.45, 0.95))
 
 func _add_ability_slot(key: String, hint: String, color: Color) -> void:
 	var root := Control.new()
-	root.custom_minimum_size = Vector2(54, 14)
+	root.custom_minimum_size = Vector2(31, 14)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var bg := ColorRect.new()
-	bg.size = Vector2(54, 14)
+	bg.size = Vector2(31, 14)
 	bg.color = Color(0.06, 0.055, 0.075, 0.86)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(bg)
 	var fill := ColorRect.new()
-	fill.size = Vector2(54, 14)
+	fill.size = Vector2(31, 14)
 	fill.color = color
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(fill)
 	var label := Label.new()
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_override("font", UI_FONT)
-	label.add_theme_font_size_override("font_size", 7)
+	label.add_theme_font_size_override("font_size", 5)
 	label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	label.add_theme_constant_override("outline_size", 2)
@@ -836,15 +904,26 @@ func _set_ability_slot(key: String, cd: float, max_cd: float) -> void:
 	var slot: Dictionary = ability_slots[key]
 	var fill: ColorRect = slot["fill"]
 	var label: Label = slot["label"]
-	var width: float = 54.0
+	var width: float = 31.0
 	var ready: bool = cd <= 0.05
 	var fill_ratio: float = 1.0 if ready else 1.0 - clampf(cd / maxf(max_cd, 0.01), 0.0, 1.0)
 	fill.size = Vector2(width * fill_ratio, 14.0)
 	fill.color = slot["color"] if ready else Color(0.18, 0.17, 0.2, 0.95)
 	label.text = "%s %s" % [key, String(slot["hint"])] if ready else "%s %.1f" % [key, cd]
 
+func _hud_plate(title: String, pos: Vector2, box: Vector2, color: Color) -> ColorRect:
+	var plate := ColorRect.new()
+	plate.name = title
+	plate.position = pos
+	plate.size = box
+	plate.color = color
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$UI.add_child(plate)
+	return plate
+
 func _hud_label(pos: Vector2, box: Vector2, color: Color, font_size: int, align: int) -> Label:
 	var label := Label.new()
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.position = pos
 	label.size = box
 	label.custom_minimum_size = box
@@ -865,32 +944,24 @@ func _normal_wave_count() -> int:
 func _refresh_hud() -> void:
 	if wave_label == null:
 		return
-	var boss_shown: bool = boss_panel != null and boss_panel.visible
-	if boss_shown:
-		wave_label.text = ""
-		enemies_label.text = ""
-	else:
-		wave_label.text = "WAVE %d / %d" % [clampi(wave_index + 1, 1, _normal_wave_count()), _normal_wave_count()]
-		enemies_label.text = "LEFT %d" % _live_enemy_count()
-	score_label.text = "SCORE %d   KILLS %d   COINS %d" % [score, kills, coins]
 	var rank := _style_rank()
-	if no_glare_chain > 1:
-		combo_label.text = "STYLE %s   COMBO x%d" % [rank, no_glare_chain]
-	else:
-		combo_label.text = "STYLE %s" % rank
+	var left := _live_enemy_count()
+	wave_label.text = "WAVE %d  LEFT %d" % [clampi(wave_index + 1, 1, _normal_wave_count()), left]
+	score_label.text = "%d KILLS\n%d COIN" % [kills, coins]
+	combo_label.text = "%s\nSCORE %d" % [rank, score]
 	combo_label.add_theme_color_override("font_color", _rank_color(rank))
 
 func _rank_color(rank: String) -> Color:
-	if rank == "SSS":
-		return Color(1.0, 0.35, 0.95, 1.0)
-	if rank == "SS":
+	if rank == "SS - Ssuper Smexxy":
 		return Color(0.75, 0.5, 1.0, 1.0)
-	if rank == "S":
+	if rank == "S - Smexy":
 		return Color(0.45, 0.85, 1.0, 1.0)
-	if rank == "A":
+	if rank == "A - Awe":
 		return Color(0.5, 1.0, 0.45, 1.0)
-	if rank == "B":
+	if rank == "B - Blowin' up":
 		return Color(1.0, 0.88, 0.35, 1.0)
+	if rank == "C - Comeback?":
+		return Color(1.0, 0.62, 0.42, 1.0)
 	return Color(0.86, 0.86, 0.86, 1.0)
 
 func _set_reward(text: String) -> void:
@@ -1124,6 +1195,40 @@ func _refresh_shop(message: String = "") -> void:
 	shop_text.text = text
 	shop_status.text = message
 	_refresh_hud()
+
+func _build_pause_panel() -> void:
+	pause_panel = Control.new()
+	pause_panel.name = "PausePanel"
+	pause_panel.visible = false
+	pause_panel.process_mode = Node.PROCESS_MODE_ALWAYS
+	pause_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var dim := ColorRect.new()
+	dim.color = Color(0.0, 0.0, 0.0, 0.72)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pause_panel.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pause_panel.add_child(center)
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(176, 82)
+	box.add_theme_constant_override("separation", 3)
+	center.add_child(box)
+	var title := Label.new()
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.35, 1.0))
+	title.text = "PAUSED"
+	box.add_child(title)
+	pause_resume = _make_button("RESUME")
+	pause_resume.pressed.connect(_resume_game)
+	box.add_child(pause_resume)
+	pause_retry = _make_button("RETRY")
+	pause_retry.pressed.connect(_restart)
+	box.add_child(pause_retry)
+	pause_menu = _make_button("MAIN MENU")
+	pause_menu.pressed.connect(_to_menu)
+	box.add_child(pause_menu)
+	$UI.add_child(pause_panel)
 
 func _build_tutorial_panel() -> void:
 	tutorial_panel = Control.new()

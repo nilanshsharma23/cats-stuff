@@ -47,6 +47,7 @@ signal style_event(kind: String, amount: int)
 @onready var anim: AnimatedSprite2D = $Anim
 @onready var health_bar: TextureProgressBar = $UI/Control/HealthBar
 @onready var slash: AnimatedSprite2D = $Slash
+@onready var tail_sweep: AnimatedSprite2D = $TailSweep
 @onready var glare_eyes: Node2D = $GlareEyes
 
 var health: int = max_health
@@ -84,7 +85,9 @@ func _ready() -> void:
 	health_bar.value = health
 	glare_eyes.visible = false
 	slash.visible = false
+	tail_sweep.visible = false
 	slash.animation_finished.connect(func(): slash.visible = false)
+	tail_sweep.animation_finished.connect(func(): tail_sweep.visible = false)
 
 func _physics_process(delta: float) -> void:
 	if dead:
@@ -256,7 +259,7 @@ func _tail() -> void:
 	tail_cd = tail_cooldown
 	var aim := _aim()
 	last_direction = aim
-	_show_slash(aim, 1.25)
+	_show_tail_sweep(aim)
 	style_event.emit("tail", 5)
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e) or not e.has_method("take_damage"):
@@ -275,6 +278,15 @@ func _show_slash(aim: Vector2, scale_mul: float) -> void:
 	slash.frame = 0
 	slash.visible = true
 	slash.play("slash")
+
+func _show_tail_sweep(aim: Vector2) -> void:
+	tail_sweep.position = aim * 12.0
+	tail_sweep.rotation = aim.angle()
+	tail_sweep.flip_v = aim.x < 0.0
+	tail_sweep.scale = Vector2(0.72, 0.72)
+	tail_sweep.frame = 0
+	tail_sweep.visible = true
+	tail_sweep.play("tail")
 
 # LEER (E): stun and MARK a pack. Marked foes take double light damage and
 # detonate into an EXECUTE when killed - an offensive setup, not a panic button.
