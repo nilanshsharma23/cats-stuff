@@ -16,8 +16,9 @@ signal died
 @onready var sprite: AnimatedSprite2D = $Anim
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 
-const ARENA_MIN := Vector2(28, 24)
-const ARENA_MAX := Vector2(228, 120)
+# Arena clamp, injected by the level (rooms differ in size now).
+@export var arena_min := Vector2(16, 16)
+@export var arena_max := Vector2(304, 164)
 
 # How long before impact a dash-parry still connects.
 @export var parry_window: float = 0.2
@@ -363,7 +364,7 @@ func _find_player() -> void:
 	player = get_tree().get_first_node_in_group("player")
 
 func _arena_clamp(p: Vector2) -> Vector2:
-	return Vector2(clampf(p.x, ARENA_MIN.x, ARENA_MAX.x), clampf(p.y, ARENA_MIN.y, ARENA_MAX.y))
+	return Vector2(clampf(p.x, arena_min.x, arena_max.x), clampf(p.y, arena_min.y, arena_max.y))
 
 func _draw() -> void:
 	if marked_timer > 0.0:

@@ -36,8 +36,9 @@ signal died
 # How long before impact a dash-parry still connects.
 @export var parry_window: float = 0.18
 
-const ARENA_MIN := Vector2(26, 24)
-const ARENA_MAX := Vector2(230, 122)
+# Arena clamp, injected by the level (rooms differ in size now).
+@export var arena_min := Vector2(16, 16)
+@export var arena_max := Vector2(304, 164)
 
 var is_boss: bool = false
 var tint: Color = Color.WHITE
@@ -294,7 +295,7 @@ func _run_hop(delta: float) -> void:
 		attack_lock = max(attack_lock, hop_recover)
 
 func _arena_clamp(p: Vector2) -> Vector2:
-	return Vector2(clampf(p.x, ARENA_MIN.x, ARENA_MAX.x), clampf(p.y, ARENA_MIN.y, ARENA_MAX.y))
+	return Vector2(clampf(p.x, arena_min.x, arena_max.x), clampf(p.y, arena_min.y, arena_max.y))
 
 func _begin_croak() -> void:
 	is_croaking = true

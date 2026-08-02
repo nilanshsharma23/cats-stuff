@@ -137,6 +137,7 @@ var last_earned: int = 0
 var result_path: String = ""
 var reward_timer: float = 0.0
 var hitstop_id: int = 0
+var hitstop_pending: int = 0
 
 var wave_label: Label
 var enemies_label: Label
@@ -158,11 +159,21 @@ var upgrade_button: Button
 var boss_panel: Control
 var boss_name_label: Label
 var boss_fill: ColorRect
-var boss_bar_width: float = 150.0
+var boss_bar_width: float = 188.0
 var ability_panel: HBoxContainer
 var ability_slots: Dictionary = {}
 var hud_panel: ColorRect
 var score_panel: ColorRect
+# Base render resolution (320x180 since the viewport bump) and the measured
+# arena, both used for camera clamping and for keeping spawns inside the room.
+var VIEW_SIZE := Vector2(
+	float(ProjectSettings.get_setting("display/window/size/viewport_width", 320)),
+	float(ProjectSettings.get_setting("display/window/size/viewport_height", 180)))
+var arena_min: Vector2 = Vector2.ZERO
+var arena_max: Vector2 = Vector2(320, 180)
+var play_min: Vector2 = Vector2(16, 16)
+var play_max: Vector2 = Vector2(304, 164)
+
 var danger_vignette: Control
 var style_bar_bg: ColorRect
 var style_bar_fill: ColorRect
@@ -231,9 +242,14 @@ func _ready() -> void:
 	endless = bool(get_tree().get_meta("endless_enabled", false))
 	if endless:
 		tutorial_enabled = false
+	# Hard guarantee: every pause in this game (death, wave break, shop, pause
+	# menu) puts a panel on this layer and waits for a click. If the layer is
+	# hidden - as level2's scene was - the game locks up with no visible way out
+	# and reads as a total freeze. Never trust the scene flag for this.
+	$UI.visible = true
 	banner.modulate.a = 0.0
 	_dim_floor()
-	#_setup_camera()
+	_setup_camera()
 	_build_result_panel()
 	_build_hud()
 	_build_ability_bar()
@@ -267,6 +283,11 @@ func _process(delta: float) -> void:
 	if get_tree().paused:
 		_sync_fight_ui()
 		return
+	# Backstop against a stranded hitstop. If nothing is mid-hitstop the clock
+	# must be running at full speed; anything else means a code path dropped it,
+	# and the player would just experience the game as frozen.
+	if hitstop_pending <= 0 and not is_equal_approx(Engine.time_scale, 1.0):
+		Engine.time_scale = 1.0
 	if style_timeout > 0.0:
 		style_timeout -= delta
 	else:
@@ -283,7 +304,7 @@ func _process(delta: float) -> void:
 		_freeze_world(true)
 	_tick_ultimate(delta)
 	_tick_tutorial(delta)
-	_update_shake(delta)
+	_update_camera(delta)
 	_update_boss_bar()
 	_update_ability_bar()
 	_update_danger(delta)
@@ -343,13 +364,75 @@ func _dim_floor() -> void:
 	if tiles is CanvasItem:
 		(tiles as CanvasItem).modulate = Color(0.72, 0.75, 0.86, 1.0)
 
+# Adopts the Camera2D placed in the level scene (creating one if a scene forgot
+# it, as level4 had), then pins its limits to the actual tiled arena.
 func _setup_camera() -> void:
-	cam = Camera2D.new()
-	cam.position = Vector2(160, 90)
-	# A hair of zoom-in gives margin so screen shake never bares the arena edge.
-	cam.zoom = Vector2(1.0, 1.0)
-	add_child(cam)
+	_compute_arena()
+	cam = get_node_or_null("Camera2D") as Camera2D
+	if cam == null:
+		cam = Camera2D.new()
+		cam.name = "Camera2D"
+		add_child(cam)
+	cam.zoom = Vector2.ONE
+	cam.offset = Vector2.ZERO
+	cam.limit_left = int(arena_min.x)
+	cam.limit_top = int(arena_min.y)
+	cam.limit_right = int(arena_max.x)
+	cam.limit_bottom = int(arena_max.y)
+	cam.position = _camera_target()
 	cam.make_current()
+
+# Playable extent, measured from the tile layers rather than hardcoded, because
+# the four levels are now different sizes (352x224 down to 288x176).
+func _compute_arena() -> void:
+	var rect := Rect2i()
+	var tile := Vector2i(16, 16)
+	var found := false
+	for layer in _tile_layers(self):
+		var used: Rect2i = layer.get_used_rect()
+		if used.size == Vector2i.ZERO:
+			continue
+		if layer.tile_set != null:
+			tile = layer.tile_set.tile_size
+		rect = used if not found else rect.merge(used)
+		found = true
+	if not found:
+		arena_min = Vector2.ZERO
+		arena_max = VIEW_SIZE
+	else:
+		arena_min = Vector2(rect.position.x * tile.x, rect.position.y * tile.y)
+		arena_max = Vector2(rect.end.x * tile.x, rect.end.y * tile.y)
+	# Enemies and spawns stay a tile inside the wall ring.
+	var inset := Vector2(tile) * 0.9
+	play_min = arena_min + inset
+	play_max = arena_max - inset
+
+func _tile_layers(node: Node) -> Array:
+	var out: Array = []
+	if node is TileMapLayer:
+		out.append(node)
+	for c in node.get_children():
+		out.append_array(_tile_layers(c))
+	return out
+
+# Where the camera wants to sit: on the cat, but never showing past the walls.
+# An arena smaller than the screen (level3/4 are) is simply centred instead.
+func _camera_target() -> Vector2:
+	var target := (arena_min + arena_max) * 0.5
+	var cat := get_tree().get_first_node_in_group("player")
+	if cat != null and is_instance_valid(cat):
+		target = cat.global_position
+	var half := VIEW_SIZE * 0.5
+	var span := arena_max - arena_min
+	if span.x <= VIEW_SIZE.x:
+		target.x = (arena_min.x + arena_max.x) * 0.5
+	else:
+		target.x = clampf(target.x, arena_min.x + half.x, arena_max.x - half.x)
+	if span.y <= VIEW_SIZE.y:
+		target.y = (arena_min.y + arena_max.y) * 0.5
+	else:
+		target.y = clampf(target.y, arena_min.y + half.y, arena_max.y - half.y)
+	return target
 
 # --- OVERDRIVE ---------------------------------------------------------------
 
@@ -375,11 +458,11 @@ func _build_neon() -> void:
 	ult_label.name = "UltLabel"
 	ult_label.visible = false
 	ult_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ult_label.position = Vector2(48, 24)
-	ult_label.size = Vector2(160, 20)
+	ult_label.position = Vector2(60, 30)
+	ult_label.size = Vector2(200, 24)
 	ult_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ult_label.add_theme_font_override("font", UI_FONT)
-	ult_label.add_theme_font_size_override("font_size", 9)
+	ult_label.add_theme_font_size_override("font_size", 11)
 	ult_label.add_theme_color_override("font_color", Color(1.0, 0.4, 1.0, 1.0))
 	ult_label.add_theme_color_override("font_outline_color", Color(0.05, 0, 0.1, 1.0))
 	ult_label.add_theme_constant_override("outline_size", 4)
@@ -408,8 +491,7 @@ func _start_ultimate() -> void:
 	# Spending the meter is the cost - you drop straight back to D rank.
 	style_meter = 0.0
 	style_timeout = 0.0
-	hitstop_id += 1
-	Engine.time_scale = 1.0
+	_clear_hitstop()
 	_freeze_world(true)
 	if not cat.plan_action_queued.is_connected(_on_plan_action_queued):
 		cat.plan_action_queued.connect(_on_plan_action_queued)
@@ -527,18 +609,12 @@ func _build_flash() -> void:
 	flash_rect.modulate.a = 0.0
 	$UI.add_child(flash_rect)
 
-func _update_shake(delta: float) -> void:
+func _update_camera(delta: float) -> void:
 	if cam == null:
 		return
-	# The arena is a single fixed screen, so the camera cannot follow - but a few
-	# pixels of lean toward the cat keeps it from feeling like a static diorama.
-	var lean := Vector2.ZERO
-	var cat := get_tree().get_first_node_in_group("player")
-	if cat != null and is_instance_valid(cat):
-		lean = (cat.global_position - Vector2(128, 72)) * 0.055
-		lean.x = clampf(lean.x, -6.0, 6.0)
-		lean.y = clampf(lean.y, -4.0, 4.0)
-	cam.position = cam.position.lerp(Vector2(128, 72) + lean, clampf(delta * 3.5, 0.0, 1.0))
+	# Follow the cat, eased, and clamped so the view never leaves the room.
+	cam.position = cam.position.lerp(_camera_target(), clampf(delta * 9.0, 0.0, 1.0))
+	# Shake rides on offset so it never fights the follow or the clamp.
 	if shake_amt > 0.05:
 		shake_amt = max(shake_amt - 26.0 * delta, 0.0)
 		cam.offset = Vector2(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)) * shake_amt
@@ -559,14 +635,27 @@ func _flash(color: Color, strength: float) -> void:
 	flash_tween.tween_property(flash_rect, "modulate:a", 0.0, 0.3)
 
 func _hitstop(duration: float, scale_value: float) -> void:
-	if get_tree().paused:
+	if get_tree().paused or ult_state != "":
 		return
 	hitstop_id += 1
 	var active_id: int = hitstop_id
+	hitstop_pending += 1
 	Engine.time_scale = scale_value
 	await get_tree().create_timer(duration, true, false, true).timeout
-	if hitstop_id == active_id and not get_tree().paused:
+	hitstop_pending = maxi(hitstop_pending - 1, 0)
+	# Restore unconditionally. The old version skipped this while the tree was
+	# paused, which stranded time_scale at 0.12 whenever a pause landed inside a
+	# hitstop - the game then ran at a tenth speed forever and read as frozen.
+	if hitstop_id == active_id:
 		Engine.time_scale = 1.0
+
+# Cancels any in-flight hitstop and puts the clock back. Anything that pauses,
+# unpauses or changes scene calls this, so a hitstop can never outlive the
+# moment it belongs to.
+func _clear_hitstop() -> void:
+	hitstop_id += 1
+	hitstop_pending = 0
+	Engine.time_scale = 1.0
 
 func _hype(text: String, color: Color) -> void:
 	banner.add_theme_color_override("font_color", color)
@@ -757,6 +846,10 @@ func _scaled_cfg(cfg: Dictionary, scene_key: String) -> Dictionary:
 	var out: Dictionary = cfg.duplicate(true)
 	var mode := _diff()
 	out["parry_window"] = float(mode["parry"])
+	# Rooms are different sizes now, so enemies that clamp themselves (frogs and
+	# both hopping/flying bosses) need this level's real bounds.
+	out["arena_min"] = play_min
+	out["arena_max"] = play_max
 	if bool(out.get("is_boss", false)):
 		var boss_hp := float(out.get("max_health", 40)) * (1.0 + 0.1 * float(level_id - 1))
 		out["max_health"] = maxi(1, int(round(boss_hp * float(mode["enemy_hp"]))))
@@ -860,16 +953,16 @@ func _live_enemy_count() -> int:
 			n += 1
 	return n
 
+# Spawn bounds come from the measured arena, not hardcoded numbers - the levels
+# are different sizes now and the old 256x144 figures put spawns in the walls.
 func _spawn_point() -> Vector2:
 	var cat := get_tree().get_first_node_in_group("player")
-	var cat_pos: Vector2 = cat.global_position if cat != null else Vector2(128, 72)
-	var min_pos := Vector2(30, 28)
-	var max_pos := Vector2(226, 116)
+	var cat_pos: Vector2 = cat.global_position if cat != null else (arena_min + arena_max) * 0.5
 	for i in 24:
-		var p := Vector2(rng.randf_range(min_pos.x, max_pos.x), rng.randf_range(min_pos.y, max_pos.y))
+		var p := Vector2(rng.randf_range(play_min.x, play_max.x), rng.randf_range(play_min.y, play_max.y))
 		if p.distance_to(cat_pos) > 58.0:
 			return p
-	return Vector2(rng.randf_range(min_pos.x, max_pos.x), rng.randf_range(min_pos.y, max_pos.y))
+	return Vector2(rng.randf_range(play_min.x, play_max.x), rng.randf_range(play_min.y, play_max.y))
 
 func _on_enemy_died(enemy: Node) -> void:
 	kills += 1
@@ -920,7 +1013,7 @@ func _drop_heart(at: Vector2) -> void:
 	var heart: Node2D = PICKUP.new()
 	heart.kind = "health"
 	heart.amount = 2
-	heart.position = Vector2(clampf(at.x, 16.0, 240.0), clampf(at.y, 16.0, 130.0))
+	heart.position = Vector2(clampf(at.x, play_min.x, play_max.x), clampf(at.y, play_min.y, play_max.y))
 	heart.collected.connect(_on_pickup_collected)
 	add_child(heart)
 
@@ -1066,6 +1159,7 @@ func _start_waited_wave() -> void:
 		return
 	waiting_for_wave_start = false
 	break_panel.visible = false
+	_clear_hitstop()
 	get_tree().paused = false
 	_next_wave()
 	_sync_fight_ui()
@@ -1091,7 +1185,7 @@ func _build_break_panel() -> void:
 		Color(0.05, 0.09, 0.12, 0.97), Color(0.5, 1.0, 0.85, 0.85)))
 	center.add_child(frame)
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(222, 126)
+	box.custom_minimum_size = Vector2(272, 152)
 	box.add_theme_constant_override("separation", 1)
 	frame.add_child(box)
 	var title := Label.new()
@@ -1103,7 +1197,7 @@ func _build_break_panel() -> void:
 	break_info = Label.new()
 	break_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	break_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	break_info.custom_minimum_size = Vector2(228, 20)
+	break_info.custom_minimum_size = Vector2(272, 24)
 	break_info.add_theme_font_size_override("font_size", 8)
 	break_info.add_theme_color_override("font_color", Color(0.92, 0.9, 0.78, 1))
 	box.add_child(break_info)
@@ -1123,7 +1217,7 @@ func _build_break_panel() -> void:
 	box.add_child(leer_button)
 	break_status = Label.new()
 	break_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	break_status.custom_minimum_size = Vector2(228, 9)
+	break_status.custom_minimum_size = Vector2(272, 11)
 	break_status.add_theme_font_size_override("font_size", 8)
 	break_status.add_theme_color_override("font_color", Color(0.5, 0.95, 1.0, 1))
 	box.add_child(break_status)
@@ -1169,29 +1263,25 @@ func _toggle_pause() -> void:
 		return
 	var paused := not get_tree().paused
 	get_tree().paused = paused
-	hitstop_id += 1
-	Engine.time_scale = 1.0
+	_clear_hitstop()
 	pause_panel.visible = paused
 	_sync_fight_ui()
 	if paused:
 		pause_resume.grab_focus()
 
 func _resume_game() -> void:
-	hitstop_id += 1
-	Engine.time_scale = 1.0
+	_clear_hitstop()
 	get_tree().paused = false
 	pause_panel.visible = false
 	_sync_fight_ui()
 
 func _restart() -> void:
-	hitstop_id += 1
-	Engine.time_scale = 1.0
+	_clear_hitstop()
 	get_tree().paused = false
 	get_tree().reload_current_scene()
 
 func _continue() -> void:
-	hitstop_id += 1
-	Engine.time_scale = 1.0
+	_clear_hitstop()
 	get_tree().paused = false
 	if result_path != "":
 		get_tree().change_scene_to_file(result_path)
@@ -1199,8 +1289,7 @@ func _continue() -> void:
 		get_tree().change_scene_to_file("res://scenes/level1.tscn")
 
 func _to_menu() -> void:
-	hitstop_id += 1
-	Engine.time_scale = 1.0
+	_clear_hitstop()
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
@@ -1320,33 +1409,35 @@ func _rank_coin_multiplier() -> float:
 func _build_hud() -> void:
 	# Top-left: wave / enemies-left plate. Top-right: score plate. They no longer
 	# collide with each other or with the boss bar (which replaces them mid-boss).
-	hud_panel = _hud_plate("HudTop", Vector2(4, 3), Vector2(110, 11), Color(0.02, 0.025, 0.035, 0.82))
-	score_panel = _hud_plate("HudScore", Vector2(176, 3), Vector2(76, 22), Color(0.025, 0.025, 0.035, 0.86))
+	# Laid out for the 320x180 viewport: top plates hug the top corners, the
+	# player's rank/score and the ability bar hug the bottom.
+	hud_panel = _hud_plate("HudTop", Vector2(5, 4), Vector2(138, 13), Color(0.02, 0.025, 0.035, 0.82))
+	score_panel = _hud_plate("HudScore", Vector2(221, 4), Vector2(94, 27), Color(0.025, 0.025, 0.035, 0.86))
 	# The rank/score sits bare on the arena - no plate behind it. Its heavy text
 	# outline is what keeps it legible over the floor.
-	wave_label = _hud_label(Vector2(8, 4), Vector2(104, 9), Color(0.96, 0.92, 0.74, 1.0), 6, HORIZONTAL_ALIGNMENT_LEFT)
-	score_label = _hud_label(Vector2(180, 5), Vector2(68, 16), Color(0.95, 0.96, 1.0, 1.0), 6, HORIZONTAL_ALIGNMENT_RIGHT)
-	combo_label = _hud_label(Vector2(9, 108), Vector2(92, 16), Color(1.0, 0.82, 0.25, 1.0), 7, HORIZONTAL_ALIGNMENT_LEFT)
+	wave_label = _hud_label(Vector2(10, 5), Vector2(130, 11), Color(0.96, 0.92, 0.74, 1.0), 7, HORIZONTAL_ALIGNMENT_LEFT)
+	score_label = _hud_label(Vector2(227, 6), Vector2(84, 20), Color(0.95, 0.96, 1.0, 1.0), 7, HORIZONTAL_ALIGNMENT_RIGHT)
+	combo_label = _hud_label(Vector2(11, 134), Vector2(120, 20), Color(1.0, 0.82, 0.25, 1.0), 8, HORIZONTAL_ALIGNMENT_LEFT)
 	combo_label.add_theme_constant_override("outline_size", 4)
 	# Slim bar under the rank showing progress toward the next tier, so style is
 	# something you watch climb instead of a word that changes at random.
 	style_bar_bg = ColorRect.new()
 	style_bar_bg.name = "StyleBarBg"
-	style_bar_bg.position = Vector2(9, 125)
-	style_bar_bg.size = Vector2(74, 3)
+	style_bar_bg.position = Vector2(11, 156)
+	style_bar_bg.size = Vector2(94, 4)
 	style_bar_bg.color = Color(0.03, 0.03, 0.05, 0.72)
 	style_bar_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	$UI.add_child(style_bar_bg)
 	style_bar_fill = ColorRect.new()
 	style_bar_fill.name = "StyleBarFill"
-	style_bar_fill.position = Vector2(10, 126)
-	style_bar_fill.size = Vector2(0, 1)
+	style_bar_fill.position = Vector2(12, 157)
+	style_bar_fill.size = Vector2(0, 2)
 	style_bar_fill.color = Color(1.0, 0.82, 0.25, 1.0)
 	style_bar_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	$UI.add_child(style_bar_fill)
 	enemies_label = _hud_label(Vector2(0, 0), Vector2(1, 1), Color(1.0, 0.62, 0.55, 1.0), 7, HORIZONTAL_ALIGNMENT_RIGHT)
 	enemies_label.visible = false
-	reward_label = _hud_label(Vector2(48, 98), Vector2(160, 10), Color(0.55, 1.0, 0.86, 1.0), 7, HORIZONTAL_ALIGNMENT_CENTER)
+	reward_label = _hud_label(Vector2(60, 122), Vector2(200, 12), Color(0.55, 1.0, 0.86, 1.0), 8, HORIZONTAL_ALIGNMENT_CENTER)
 	reward_label.modulate.a = 0.0
 	_refresh_hud()
 
@@ -1354,9 +1445,9 @@ func _build_ability_bar() -> void:
 	ability_slots.clear()
 	ability_panel = HBoxContainer.new()
 	ability_panel.name = "AbilityBar"
-	# Bottom edge, right of the player card and clear of the health bar.
-	# 6 slots x 24 + 5 gaps x 2 = 154px, ending just shy of x256.
-	ability_panel.position = Vector2(100, 117)
+	# Bottom-right, clear of the rank text and the cat's health bar.
+	# 6 slots x 28 + 5 gaps x 2 = 178px, ending just shy of x320.
+	ability_panel.position = Vector2(138, 146)
 	ability_panel.add_theme_constant_override("separation", 2)
 	$UI.add_child(ability_panel)
 	_add_ability_slot("PAW", "m1", Color(0.48, 1.0, 0.66, 0.95))
@@ -1380,7 +1471,7 @@ func _hex_points(size: Vector2) -> PackedVector2Array:
 
 func _add_ability_slot(key: String, hint: String, color: Color) -> void:
 	var root := Control.new()
-	var slot_size := Vector2(24.0, 20.0)
+	var slot_size := Vector2(28.0, 23.0)
 	root.custom_minimum_size = slot_size
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var hex: PackedVector2Array = _hex_points(slot_size)
@@ -1519,7 +1610,7 @@ func _refresh_hud() -> void:
 	var rank_col := _rank_color(rank)
 	combo_label.add_theme_color_override("font_color", rank_col)
 	if style_bar_fill != null:
-		style_bar_fill.size = Vector2(72.0 * _rank_fraction(), 1)
+		style_bar_fill.size = Vector2(92.0 * _rank_fraction(), 2)
 		style_bar_fill.color = rank_col
 
 # How far the style meter has climbed through the current rank band, 0..1.
@@ -1559,23 +1650,23 @@ func _build_boss_bar() -> void:
 	$UI.add_child(boss_panel)
 	var name_label := Label.new()
 	boss_name_label = name_label
-	name_label.position = Vector2(48, 3)
-	name_label.size = Vector2(160, 10)
+	name_label.position = Vector2(60, 4)
+	name_label.size = Vector2(200, 12)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_label.add_theme_font_size_override("font_size", 8)
+	name_label.add_theme_font_size_override("font_size", 10)
 	name_label.add_theme_color_override("font_color", Color(1.0, 0.55, 1.0, 1.0))
 	name_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	name_label.add_theme_constant_override("outline_size", 3)
 	name_label.text = BOSS_NAME
 	boss_panel.add_child(name_label)
 	var frame := ColorRect.new()
-	frame.position = Vector2(53, 13)
-	frame.size = Vector2(boss_bar_width, 6)
+	frame.position = Vector2(66, 18)
+	frame.size = Vector2(boss_bar_width, 7)
 	frame.color = Color(0.1, 0.02, 0.08, 0.9)
 	boss_panel.add_child(frame)
 	boss_fill = ColorRect.new()
-	boss_fill.position = Vector2(54, 14)
-	boss_fill.size = Vector2(boss_bar_width - 2.0, 4)
+	boss_fill.position = Vector2(67, 19)
+	boss_fill.size = Vector2(boss_bar_width - 2.0, 5)
 	boss_fill.color = Color(0.95, 0.2, 0.55, 1.0)
 	boss_panel.add_child(boss_fill)
 
@@ -1600,7 +1691,7 @@ func _update_boss_bar() -> void:
 		var shown_name: String = String(boss.get("boss_name")) if boss.get("boss_name") != null else BOSS_NAME
 		boss_name_label.text = shown_name
 		boss_name_label.add_theme_color_override("font_color", _boss_name_color(shown_name))
-	boss_fill.size = Vector2((boss_bar_width - 2.0) * (hp / mh), 4)
+	boss_fill.size = Vector2((boss_bar_width - 2.0) * (hp / mh), 5)
 
 func _build_result_panel() -> void:
 	for child in game_over.get_children():
@@ -1624,7 +1715,7 @@ func _build_result_panel() -> void:
 	center.add_child(frame)
 	var box := VBoxContainer.new()
 	box.name = "Box"
-	box.custom_minimum_size = Vector2(210, 112)
+	box.custom_minimum_size = Vector2(258, 138)
 	box.add_theme_constant_override("separation", 2)
 	frame.add_child(box)
 	result_title = Label.new()
@@ -1635,7 +1726,7 @@ func _build_result_panel() -> void:
 	result_summary = Label.new()
 	result_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	result_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	result_summary.custom_minimum_size = Vector2(216, 34)
+	result_summary.custom_minimum_size = Vector2(258, 42)
 	result_summary.add_theme_font_size_override("font_size", 8)
 	result_summary.add_theme_color_override("font_color", Color(0.93, 0.9, 0.78, 1.0))
 	box.add_child(result_summary)
@@ -1653,8 +1744,7 @@ func _build_result_panel() -> void:
 	box.add_child(result_menu)
 
 func _finish_run(title: String, success: bool) -> void:
-	hitstop_id += 1
-	Engine.time_scale = 1.0
+	_clear_hitstop()
 	# Killing the boss with the Overdrive combo ends the run mid-execution, and
 	# _process stops once the tree is paused - so tear the ultimate down here or
 	# the freeze, the neon grade and the ducked music all stay stuck on.
@@ -1701,19 +1791,19 @@ func _build_shop_panel() -> void:
 		Color(0.06, 0.06, 0.1, 0.97), Color(1.0, 0.84, 0.35, 0.85)))
 	center.add_child(frame)
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(210, 108)
+	box.custom_minimum_size = Vector2(258, 132)
 	box.add_theme_constant_override("separation", 2)
 	frame.add_child(box)
 	shop_text = Label.new()
 	shop_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	shop_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	shop_text.custom_minimum_size = Vector2(216, 38)
+	shop_text.custom_minimum_size = Vector2(258, 46)
 	shop_text.add_theme_font_size_override("font_size", 9)
 	shop_text.add_theme_color_override("font_color", Color(1.0, 0.92, 0.72, 1.0))
 	box.add_child(shop_text)
 	shop_status = Label.new()
 	shop_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	shop_status.custom_minimum_size = Vector2(216, 12)
+	shop_status.custom_minimum_size = Vector2(258, 14)
 	shop_status.add_theme_font_size_override("font_size", 8)
 	shop_status.add_theme_color_override("font_color", Color(0.48, 0.95, 1.0, 1.0))
 	box.add_child(shop_status)
@@ -1735,7 +1825,7 @@ func _build_shop_panel() -> void:
 func _make_button(text: String) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.custom_minimum_size = Vector2(146, 14)
+	button.custom_minimum_size = Vector2(180, 17)
 	button.add_theme_font_size_override("font_size", 9)
 	button.add_theme_stylebox_override("normal", _button_box(Color(0.13, 0.12, 0.16, 1), Color(0.32, 0.3, 0.36, 1)))
 	button.add_theme_stylebox_override("hover", _button_box(Color(0.2, 0.15, 0.19, 1), Color(0.86, 0.28, 0.34, 1)))
@@ -1833,7 +1923,7 @@ func _build_pause_panel() -> void:
 		Color(0.05, 0.05, 0.08, 0.97), Color(1.0, 0.84, 0.35, 0.85)))
 	center.add_child(frame)
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(170, 78)
+	box.custom_minimum_size = Vector2(210, 96)
 	box.add_theme_constant_override("separation", 3)
 	frame.add_child(box)
 	var title := Label.new()
@@ -1901,8 +1991,8 @@ func _build_tutorial_panel() -> void:
 	tutorial_panel.name = "TutorialPanel"
 	tutorial_panel.visible = false
 	tutorial_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tutorial_panel.position = Vector2(18, 17)
-	tutorial_panel.size = Vector2(220, 44)
+	tutorial_panel.position = Vector2(25, 22)
+	tutorial_panel.size = Vector2(270, 52)
 	var card := Panel.new()
 	card.set_anchors_preset(Control.PRESET_FULL_RECT)
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1910,30 +2000,30 @@ func _build_tutorial_panel() -> void:
 		Color(0.05, 0.07, 0.12, 0.92), Color(1.0, 0.84, 0.35, 0.9)))
 	tutorial_panel.add_child(card)
 	tutorial_title = Label.new()
-	tutorial_title.position = Vector2(6, 2)
-	tutorial_title.size = Vector2(150, 10)
+	tutorial_title.position = Vector2(7, 3)
+	tutorial_title.size = Vector2(185, 12)
 	tutorial_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tutorial_title.add_theme_font_size_override("font_size", 8)
+	tutorial_title.add_theme_font_size_override("font_size", 10)
 	tutorial_title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.35, 1.0))
 	tutorial_title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	tutorial_title.add_theme_constant_override("outline_size", 3)
 	tutorial_panel.add_child(tutorial_title)
 	tutorial_progress = Label.new()
-	tutorial_progress.position = Vector2(160, 2)
-	tutorial_progress.size = Vector2(54, 10)
+	tutorial_progress.position = Vector2(198, 3)
+	tutorial_progress.size = Vector2(65, 12)
 	tutorial_progress.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tutorial_progress.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	tutorial_progress.add_theme_font_size_override("font_size", 8)
+	tutorial_progress.add_theme_font_size_override("font_size", 10)
 	tutorial_progress.add_theme_color_override("font_color", Color(0.5, 1.0, 0.86, 1.0))
 	tutorial_progress.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	tutorial_progress.add_theme_constant_override("outline_size", 3)
 	tutorial_panel.add_child(tutorial_progress)
 	tutorial_text = Label.new()
-	tutorial_text.position = Vector2(6, 12)
-	tutorial_text.size = Vector2(208, 30)
+	tutorial_text.position = Vector2(7, 16)
+	tutorial_text.size = Vector2(256, 34)
 	tutorial_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tutorial_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	tutorial_text.add_theme_font_size_override("font_size", 7)
+	tutorial_text.add_theme_font_size_override("font_size", 9)
 	tutorial_text.add_theme_color_override("font_color", Color(0.95, 0.94, 0.86, 1.0))
 	tutorial_text.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	tutorial_text.add_theme_constant_override("outline_size", 2)

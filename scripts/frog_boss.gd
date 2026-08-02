@@ -19,8 +19,9 @@ signal died
 @onready var aoe: CPUParticles2D = $Aoe
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 
-const ARENA_MIN := Vector2(28, 24)
-const ARENA_MAX := Vector2(228, 120)
+# Arena clamp, injected by the level (rooms differ in size now).
+@export var arena_min := Vector2(16, 16)
+@export var arena_max := Vector2(304, 164)
 const FROG_SCENE: PackedScene = preload("res://scenes/frog.tscn")
 
 # How long before impact a dash-parry still connects.
@@ -389,7 +390,7 @@ func _play(anim_name: String) -> void:
 		anim.play(anim_name)
 
 func _arena_clamp(p: Vector2) -> Vector2:
-	return Vector2(clampf(p.x, ARENA_MIN.x, ARENA_MAX.x), clampf(p.y, ARENA_MIN.y, ARENA_MAX.y))
+	return Vector2(clampf(p.x, arena_min.x, arena_max.x), clampf(p.y, arena_min.y, arena_max.y))
 
 func _draw() -> void:
 	if attack_kind == "hop_windup" or attack_kind == "hop_air":

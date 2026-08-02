@@ -55,6 +55,8 @@ shape = SubResource("RectangleShape2D_v")
 position = Vector2(247, 72)
 shape = SubResource("RectangleShape2D_v")
 
+[node name="Camera2D" type="Camera2D" parent="."]
+
 [node name="UI" type="CanvasLayer" parent="."]
 process_mode = 3
 

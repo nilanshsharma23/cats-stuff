@@ -160,7 +160,7 @@ func _scale_menu() -> void:
 		box.get_node("Spacer").custom_minimum_size = Vector2(0, 1)
 	for name in ["Play", "Tutorial", "Shop", "Quit"]:
 		var button: Button = box.get_node(name)
-		button.custom_minimum_size = Vector2(150, 13)
+		button.custom_minimum_size = Vector2(184, 16)
 		button.add_theme_font_size_override("font_size", 9)
 		_style_button(button)
 
@@ -194,7 +194,7 @@ func _ensure_stats() -> void:
 		stats_label.name = "Stats"
 		stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		stats_label.custom_minimum_size = Vector2(180, 20)
+		stats_label.custom_minimum_size = Vector2(220, 24)
 		box.add_child(stats_label)
 		box.move_child(stats_label, 3)
 	stats_label.add_theme_font_size_override("font_size", 7)
@@ -220,18 +220,18 @@ func _ensure_shop_panel() -> void:
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	shop_panel.add_child(center)
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(218, 116)
+	box.custom_minimum_size = Vector2(266, 142)
 	box.add_theme_constant_override("separation", 2)
 	center.add_child(box)
 	shop_text = Label.new()
 	shop_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	shop_text.custom_minimum_size = Vector2(218, 42)
+	shop_text.custom_minimum_size = Vector2(266, 50)
 	shop_text.add_theme_font_size_override("font_size", 9)
 	shop_text.add_theme_color_override("font_color", Color(1, 0.93, 0.72, 1))
 	box.add_child(shop_text)
 	shop_status = Label.new()
 	shop_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	shop_status.custom_minimum_size = Vector2(218, 12)
+	shop_status.custom_minimum_size = Vector2(266, 14)
 	shop_status.add_theme_font_size_override("font_size", 8)
 	shop_status.add_theme_color_override("font_color", Color(0.5, 0.95, 1, 1))
 	box.add_child(shop_status)
@@ -267,7 +267,7 @@ func _ensure_difficulty_panel() -> void:
 		Color(0.05, 0.06, 0.1, 0.97), Color(1.0, 0.84, 0.35, 0.9)))
 	center.add_child(frame)
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(200, 108)
+	box.custom_minimum_size = Vector2(244, 132)
 	box.add_theme_constant_override("separation", 2)
 	frame.add_child(box)
 	var title := Label.new()
@@ -288,7 +288,7 @@ func _ensure_difficulty_panel() -> void:
 	blurb.name = "Blurb"
 	blurb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	blurb.custom_minimum_size = Vector2(196, 20)
+	blurb.custom_minimum_size = Vector2(240, 24)
 	blurb.add_theme_font_size_override("font_size", 7)
 	blurb.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9, 1))
 	box.add_child(blurb)
@@ -334,7 +334,7 @@ func _panel_box(bg: Color, border: Color) -> StyleBoxFlat:
 func _make_button(text: String) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.custom_minimum_size = Vector2(150, 13)
+	button.custom_minimum_size = Vector2(184, 16)
 	button.add_theme_font_size_override("font_size", 9)
 	_style_button(button)
 	return button

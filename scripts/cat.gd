@@ -109,8 +109,6 @@ const CAT_PARRY = preload("uid://igm67v3h80mk")
 const CAT_DIE = preload("uid://dlkb61t56j13g")
 const CAT_HURT = preload("uid://cdwakwq3on3im")
 
-@onready var camera_2d: Camera2D = $"../Camera2D"
-
 func _ready() -> void:
 	# Opt back into pausing (the level root is PROCESS_MODE_ALWAYS).
 	process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -128,8 +126,10 @@ func _ready() -> void:
 	bite_fx.animation_finished.connect(func(): bite_fx.visible = false)
 	tail_sweep.animation_finished.connect(func(): tail_sweep.visible = false)
 
-func _process(delta: float) -> void:
-	camera_2d.offset = global_position
+# The camera follows the cat, but the LEVEL drives it (see level.gd's
+# _update_camera): it is the only place that knows the arena bounds, and
+# Camera2D applies `offset` after its limits, so an offset-driven camera can
+# never be clamped to the room.
 
 func _physics_process(delta: float) -> void:
 	queue_redraw()
