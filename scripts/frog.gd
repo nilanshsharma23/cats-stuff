@@ -168,11 +168,15 @@ func _physics_process(delta: float) -> void:
 		return
 	queue_redraw()
 
-	# A hop in flight owns the frog completely - it cannot be steered or
-	# interrupted, so committing to one is a real (punishable) decision.
-	if is_hopping:
+	# A hop in flight owns the frog - it cannot be steered - but being stunned or
+	# frozen still outranks it, so crowd control is never something a frog can
+	# hop out of. (stun/freeze also call _cancel_hop, this is the belt to that
+	# pair of braces.)
+	if is_hopping and stun_timer <= 0.0 and not frozen:
 		_run_hop(delta)
 		return
+	if is_hopping:
+		_cancel_hop()
 
 	if knockback_timer > 0.0:
 		knockback_timer -= delta
@@ -331,7 +335,13 @@ func take_damage(amount: int) -> bool:
 	hurt_timer = hurt_time
 	is_croaking = false
 	# Startled: bail out of reach the moment it is hit, so landing a second blow
-	# means chasing it down or predicting the hop.
+	# means chasing it down or predicting the hop. A frog that is stunned, frozen
+	# or otherwise locked down must NOT get this - otherwise hitting a leered or
+	# parried frog instantly cancels the very control effect you set up, and
+	# frogs squirt out of an Overdrive freeze the moment the combo touches them.
+	if stun_timer > 0.0 or frozen or attack_lock > 0.0:
+		queue_redraw()
+		return false
 	if hop_cd <= 0.0 and player != null and is_instance_valid(player):
 		var away: Vector2 = global_position - player.global_position
 		_begin_hop(away if away != Vector2.ZERO else last_direction)

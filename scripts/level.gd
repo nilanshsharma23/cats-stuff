@@ -1981,6 +1981,7 @@ var tut_dummies: Array = []
 var tut_move_origin: Vector2 = Vector2.ZERO
 var tut_mouse_origin: Vector2 = Vector2.ZERO
 var tut_ready_timer: float = 0.0
+var tut_advancing: bool = false
 var tutorial_title: Label
 var tutorial_progress: Label
 
@@ -2032,6 +2033,7 @@ func _build_tutorial_panel() -> void:
 
 func _start_tutorial() -> void:
 	tutorial_active = true
+	tut_advancing = false
 	tutorial_step = 0
 	_play_music(WAVE_MUSIC)
 	_begin_tutorial_step()
@@ -2124,7 +2126,13 @@ func _clear_tut_dummies() -> void:
 # Counts a completed rep. Called from _on_style_event for everything the cat
 # already reports, and from _process for the polled move/aim steps.
 func _tutorial_credit(kind: String) -> void:
-	if not tutorial_active or tutorial_step >= TUTORIAL_STEPS.size():
+	# tut_advancing covers the celebratory beat between finishing a lesson and
+	# the next one being set up. Without it the step index has already moved on
+	# while tut_progress, tut_move_origin and tut_mouse_origin still belong to
+	# the finished lesson - so the next step could be credited instantly from
+	# stale state and skip itself (AIM in particular, since the mouse had
+	# usually already travelled far enough).
+	if not tutorial_active or tut_advancing or tutorial_step >= TUTORIAL_STEPS.size():
 		return
 	if tut_ready_timer > 0.0:
 		return
@@ -2138,13 +2146,16 @@ func _tutorial_credit(kind: String) -> void:
 		return
 	_hype("NICE!", Color(0.5, 1.0, 0.7))
 	_flash(Color(0.6, 1.0, 0.8), 0.28)
+	tut_advancing = true
+	tut_progress = 0
 	tutorial_step += 1
 	await get_tree().create_timer(0.85, false).timeout
+	tut_advancing = false
 	if tutorial_active:
 		_begin_tutorial_step()
 
 func _tick_tutorial(delta: float) -> void:
-	if not tutorial_active or tutorial_step >= TUTORIAL_STEPS.size():
+	if not tutorial_active or tut_advancing or tutorial_step >= TUTORIAL_STEPS.size():
 		return
 	tut_ready_timer = maxf(tut_ready_timer - delta, 0.0)
 	var goal := String(TUTORIAL_STEPS[tutorial_step]["goal"])

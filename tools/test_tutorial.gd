@@ -28,7 +28,10 @@ func _process(delta: float) -> bool:
 			return true
 		print("tutorial started, ", level.get("TUTORIAL_STEPS").size(), " steps")
 	guard += 1
-	if guard > 400:
+	# Each lesson now ends with a ~0.85s locked hand-off beat (so the next one
+	# cannot be credited from stale state), which is ~51 frames the harness has
+	# to sit through per step. Budget for all nine plus slack.
+	if guard > 1500:
 		printerr("FAIL: tutorial never completed (stuck on step ", level.get("tutorial_step"), ")")
 		return true
 	if not bool(level.get("tutorial_active")):

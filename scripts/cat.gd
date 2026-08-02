@@ -283,6 +283,11 @@ func cancel_overdrive() -> void:
 		_finish_execution()
 	plan_path.clear()
 	plan_actions.clear()
+	# Planning parks invuln_timer at 999 so nothing can touch the cat while the
+	# world is stopped. If the ultimate is torn down during planning (rather than
+	# after a replay) that huge value would survive and leave her invincible for
+	# the rest of the run.
+	invuln_timer = minf(invuln_timer, invuln_time)
 
 # Replay the recording over `duration` seconds. Returns false when nothing was
 # queued, so the level can skip straight to the cleanup.

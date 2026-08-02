@@ -270,7 +270,13 @@ func _spawn_minion() -> void:
 	if minion == null:
 		return
 	if minion.has_method("configure"):
-		minion.configure({"max_health": 2, "move_speed": 74.0, "aoe_damage": 1, "croak_cooldown": 2.0, "body_scale": 0.58, "tint": Color(0.72, 1.0, 0.58, 1.0), "score_value": 12})
+		# Hand down this room's bounds. Without them the minion falls back to the
+		# default clamp, which is a different box than the level it is standing
+		# in - summoned frogs could then hop clean through the far wall.
+		minion.configure({"max_health": 2, "move_speed": 74.0, "aoe_damage": 1,
+			"croak_cooldown": 2.0, "body_scale": 0.58, "tint": Color(0.72, 1.0, 0.58, 1.0),
+			"score_value": 12, "arena_min": arena_min, "arena_max": arena_max,
+			"parry_window": parry_window})
 	minion.add_to_group("frog_boss_minion")
 	minion.global_position = _summon_point()
 	get_parent().add_child(minion)
