@@ -81,6 +81,17 @@ func _ready() -> void:
 		add_to_group("boss")
 	strafe_sign = 1.0 if randf() < 0.5 else -1.0
 	health = max_health
+	# An attack launched from outside your own damage radius can never land. The
+	# frog walks up to croak_range and croaks, but _release_aoe only reaches
+	# aoe_radius - when croak_range was the larger of the two (32 vs 28 for
+	# frogs, 54 vs 32 for spitters) every single croak whiffed and frogs were
+	# literally incapable of hurting anyone. Enforced here so no future config
+	# can reintroduce it.
+	croak_range = minf(croak_range, aoe_radius * 0.8)
+	# Same class of mistake: bailing out before you are ever in range to attack.
+	# The dodge-hop must trigger from INSIDE the frog's attack range, or it just
+	# yo-yos at the edge and never fights.
+	hop_alert_range = minf(hop_alert_range, croak_range * 0.85)
 	anim.scale = Vector2(body_scale, body_scale)
 	anim.self_modulate = tint
 
@@ -234,9 +245,12 @@ func _physics_process(delta: float) -> void:
 	var aim := to_player.normalized() if to_player != Vector2.ZERO else last_direction
 	_face(aim)
 
-	# Skittish: if the cat is inside swinging distance, hop clear rather than
-	# stand there and eat it.
-	if distance <= hop_alert_range and hop_cd <= 0.0 and attack_lock <= 0.0 and randf() < hop_chance:
+	# Skittish, but never at the cost of actually fighting: a frog with its croak
+	# ready always attacks. Dodging is what it does BETWEEN attacks, while the
+	# croak is recharging - otherwise the hop pre-empts the attack every time and
+	# the frog is a harmless yo-yo.
+	if croak_cd > 0.0 and distance <= hop_alert_range and hop_cd <= 0.0 \
+			and attack_lock <= 0.0 and randf() < hop_chance:
 		_begin_hop(-aim)
 		return
 
@@ -276,8 +290,26 @@ func _begin_hop(away: Vector2) -> void:
 	dir = dir.normalized()
 	var lateral := Vector2(-dir.y, dir.x) * strafe_sign * randf_range(0.3, 0.85)
 	dir = (dir + lateral).normalized()
+	# The hop assigns global_position directly, so it goes straight through
+	# collision. Landing inside the furniture wedges the frog there permanently -
+	# check the destination, shorten the leap, and rather than dive in, skip the
+	# hop entirely if there is nowhere clear to land.
+	var level := get_parent()
+	var can_check: bool = level != null and level.has_method("is_spawn_clear")
+	var target := _arena_clamp(global_position + dir * hop_distance * randf_range(0.82, 1.15))
+	if can_check and not bool(level.call("is_spawn_clear", target, 6.0)):
+		var landed := false
+		for shorten in [0.7, 0.45, 0.25]:
+			var closer := _arena_clamp(global_position + dir * hop_distance * float(shorten))
+			if bool(level.call("is_spawn_clear", closer, 6.0)):
+				target = closer
+				landed = true
+				break
+		if not landed:
+			hop_cd = hop_cooldown * 0.4
+			return
 	hop_from = global_position
-	hop_to = _arena_clamp(global_position + dir * hop_distance * randf_range(0.82, 1.15))
+	hop_to = target
 	is_hopping = true
 	hop_timer = hop_time
 	hop_cd = hop_cooldown * randf_range(0.85, 1.25)

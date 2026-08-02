@@ -331,11 +331,23 @@ func _boss_summon(count: int) -> void:
                 "dash_cooldown_min": 0.9, "dash_cooldown_max": 1.6,
                 "body_scale": 0.58, "tint": Color(1.0, 0.55, 0.5), "score_value": 12,
             })
-        var ang := randf() * TAU
-        minion.global_position = global_position + Vector2(cos(ang), sin(ang)) * randf_range(22.0, 36.0)
+        minion.global_position = _summon_spot(parent)
         parent.add_child(minion)
         if minion.has_signal("died") and parent.has_method("_on_enemy_died"):
             minion.connect("died", Callable(parent, "_on_enemy_died").bind(minion), CONNECT_ONE_SHOT)
+
+# Ring around the boss, but only on ground the level says is clear - a minion
+# dropped inside the scenery is stuck there for the rest of the fight.
+func _summon_spot(parent: Node) -> Vector2:
+    var can_check: bool = parent != null and parent.has_method("is_spawn_clear")
+    for i in 14:
+        var ang := randf() * TAU
+        var p: Vector2 = global_position + Vector2(cos(ang), sin(ang)) * randf_range(22.0, 36.0)
+        if not can_check or bool(parent.call("is_spawn_clear", p, 6.0)):
+            return p
+    if can_check:
+        return parent.call("_nearest_clear_point", global_position)
+    return global_position + Vector2.RIGHT * 26.0
 
 func _hit_feedback() -> void:
     var base := Vector2(body_scale, body_scale)

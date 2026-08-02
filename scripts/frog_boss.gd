@@ -284,13 +284,20 @@ func _spawn_minion() -> void:
 		minion.connect("died", Callable(get_parent(), "_on_enemy_died").bind(minion), CONNECT_ONE_SHOT)
 
 func _summon_point() -> Vector2:
+	# The level knows where the scenery is; a minion dropped inside a sofa is
+	# stuck there for good.
+	var level := get_parent()
+	var can_check: bool = level != null and level.has_method("is_spawn_clear")
 	var angle: float = randf() * TAU
-	for i in 8:
+	for i in 12:
 		var dir: Vector2 = Vector2(cos(angle), sin(angle))
 		var p: Vector2 = _arena_clamp(global_position + dir * randf_range(24.0, 42.0))
-		if player == null or p.distance_to(player.global_position) > 28.0:
+		var clear: bool = (not can_check) or bool(level.call("is_spawn_clear", p, 6.0))
+		if clear and (player == null or p.distance_to(player.global_position) > 28.0):
 			return p
 		angle += PI * 0.35
+	if can_check:
+		return level.call("_nearest_clear_point", global_position)
 	return _arena_clamp(global_position + Vector2.RIGHT * 32.0)
 
 func _release_hop() -> void:

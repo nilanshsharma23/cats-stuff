@@ -53,15 +53,19 @@ var ROSTER := {
 	},
 	"frog": {
 		"scene": "frog",
-		"cfg": {"max_health": 5, "move_speed": 86.0, "aoe_damage": 1, "croak_cooldown": 2.1, "croak_range": 32.0, "bloodlust_speed_mul": 1.48,
+		"cfg": {"max_health": 5, "move_speed": 86.0, "aoe_damage": 1, "croak_cooldown": 2.1,
+			# croak_range must stay inside aoe_radius or the croak cannot reach.
+			"aoe_radius": 30.0, "croak_range": 26.0, "bloodlust_speed_mul": 1.48,
 			"hop_cooldown": 1.2, "hop_chance": 0.7, "hop_distance": 31.0,
 			"tint": Color(1, 1, 1), "body_scale": 0.72, "score_value": 26}
 	},
 	"spitter": {
 		"scene": "frog",
 		"cfg": {"max_health": 5, "move_speed": 90.0, "croak_cooldown": 1.55, "bloodlust_speed_mul": 1.28,
-			"behavior": "kiter", "croak_range": 54.0, "aoe_radius": 32.0, "croak_windup": 0.5,
-			"hop_cooldown": 0.92, "hop_chance": 0.85, "hop_distance": 38.0, "hop_alert_range": 56.0,
+			# A zoner: it hangs back and spits a wide cloud, so the cloud has to be
+			# wider than the range it spits from.
+			"behavior": "kiter", "croak_range": 44.0, "aoe_radius": 52.0, "croak_windup": 0.5,
+			"hop_cooldown": 0.92, "hop_chance": 0.85, "hop_distance": 38.0, "hop_alert_range": 34.0,
 			"tint": Color(0.5, 0.82, 1.0), "body_scale": 0.7, "score_value": 34}
 	},
 	"boss": {
@@ -177,6 +181,7 @@ var arena_min: Vector2 = Vector2.ZERO
 var arena_max: Vector2 = Vector2(320, 180)
 var play_min: Vector2 = Vector2(16, 16)
 var play_max: Vector2 = Vector2(304, 164)
+var solid_layers: Array = []
 
 var danger_vignette: Control
 var style_bar_bg: ColorRect
@@ -407,6 +412,7 @@ func _compute_arena() -> void:
 			tile = layer.tile_set.tile_size
 		rect = used if not found else rect.merge(used)
 		found = true
+	solid_layers = _tile_layers(self)
 	if not found:
 		arena_min = Vector2.ZERO
 		arena_max = VIEW_SIZE
@@ -427,6 +433,36 @@ func _tile_layers(node: Node) -> Array:
 	for c in node.get_children():
 		out.append_array(_tile_layers(c))
 	return out
+
+# Is this tile solid? Read straight off the tile data rather than asking the
+# physics server: spawns happen from _process and _ready, and direct_space_state
+# is only legal to query inside a physics frame.
+func _tile_solid_at(world_point: Vector2) -> bool:
+	for layer in solid_layers:
+		if not is_instance_valid(layer):
+			continue
+		var cell: Vector2i = layer.local_to_map(layer.to_local(world_point))
+		var data: TileData = layer.get_cell_tile_data(cell)
+		if data == null:
+			continue
+		if data.get_collision_polygons_count(0) > 0:
+			return true
+	return false
+
+# True when a body of `radius` can stand at `p` without overlapping scenery.
+# The room is full of furniture with real collision now, and anything dropped
+# inside a sofa is stuck there for the rest of the run.
+func is_spawn_clear(p: Vector2, radius: float = 7.0) -> bool:
+	if p.x < play_min.x or p.x > play_max.x or p.y < play_min.y or p.y > play_max.y:
+		return false
+	if _tile_solid_at(p):
+		return false
+	# Sample the body's rim too, so a spawn cannot straddle the edge of a solid.
+	for i in 8:
+		var angle: float = TAU * float(i) / 8.0
+		if _tile_solid_at(p + Vector2(cos(angle), sin(angle)) * radius):
+			return false
+	return true
 
 # Where the camera wants to sit: on the cat, but never showing past the walls.
 # An arena smaller than the screen (level3/4 are) is simply centred instead.
@@ -971,11 +1007,33 @@ func _live_enemy_count() -> int:
 func _spawn_point(min_distance: float = 58.0) -> Vector2:
 	var cat := get_tree().get_first_node_in_group("player")
 	var cat_pos: Vector2 = cat.global_position if cat != null else (arena_min + arena_max) * 0.5
-	for i in 24:
+	# Pass 1: far enough from the cat AND clear of scenery.
+	for i in 40:
 		var p := Vector2(rng.randf_range(play_min.x, play_max.x), rng.randf_range(play_min.y, play_max.y))
-		if p.distance_to(cat_pos) > min_distance:
+		if p.distance_to(cat_pos) > min_distance and is_spawn_clear(p):
 			return p
-	return Vector2(rng.randf_range(play_min.x, play_max.x), rng.randf_range(play_min.y, play_max.y))
+	# Pass 2: drop the distance rule before ever dropping the clearance rule -
+	# spawning close is survivable, spawning inside a wardrobe is not.
+	for i in 40:
+		var p := Vector2(rng.randf_range(play_min.x, play_max.x), rng.randf_range(play_min.y, play_max.y))
+		if is_spawn_clear(p):
+			return p
+	return _nearest_clear_point((arena_min + arena_max) * 0.5)
+
+# Spiral outward from `around` until the ground is clear. Last-resort fallback so
+# a spawn can never resolve to "inside the furniture".
+func _nearest_clear_point(around: Vector2) -> Vector2:
+	if is_spawn_clear(around):
+		return around
+	var step := 6.0
+	for ring in 24:
+		var radius: float = step * float(ring + 1)
+		for i in 12:
+			var angle: float = TAU * float(i) / 12.0 + float(ring) * 0.4
+			var p := around + Vector2(cos(angle), sin(angle)) * radius
+			if is_spawn_clear(p):
+				return p
+	return around
 
 func _on_enemy_died(enemy: Node) -> void:
 	kills += 1
@@ -1026,7 +1084,9 @@ func _drop_heart(at: Vector2) -> void:
 	var heart: Node2D = PICKUP.new()
 	heart.kind = "health"
 	heart.amount = 2
-	heart.position = Vector2(clampf(at.x, play_min.x, play_max.x), clampf(at.y, play_min.y, play_max.y))
+	# A heart inside the furniture is a heart you can never pick up.
+	heart.position = _nearest_clear_point(
+		Vector2(clampf(at.x, play_min.x, play_max.x), clampf(at.y, play_min.y, play_max.y)))
 	heart.collected.connect(_on_pickup_collected)
 	add_child(heart)
 
@@ -2234,13 +2294,13 @@ func _spawn_tut_dummy(armed: bool, hp: int) -> void:
 func _tutorial_spawn_point() -> Vector2:
 	var cat := get_tree().get_first_node_in_group("player")
 	var base: Vector2 = cat.global_position if cat != null else (play_min + play_max) * 0.5
-	for i in 20:
+	for i in 30:
 		var angle: float = rng.randf_range(PI * 0.18, PI * 0.82)   # downward arc
 		var distance: float = rng.randf_range(38.0, 58.0)
 		var p := base + Vector2(cos(angle), sin(angle)) * distance
-		if p.x >= play_min.x and p.x <= play_max.x and p.y >= play_min.y and p.y <= play_max.y:
+		if is_spawn_clear(p):
 			return p
-	# Cat is jammed against the bottom wall - fall back to anywhere legal.
+	# Cat is jammed against a wall or boxed in by furniture - fall back.
 	return _spawn_point(38.0)
 
 func _on_tut_dummy_died(dummy: Node) -> void:
