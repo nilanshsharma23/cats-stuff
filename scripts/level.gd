@@ -955,12 +955,12 @@ func _live_enemy_count() -> int:
 
 # Spawn bounds come from the measured arena, not hardcoded numbers - the levels
 # are different sizes now and the old 256x144 figures put spawns in the walls.
-func _spawn_point() -> Vector2:
+func _spawn_point(min_distance: float = 58.0) -> Vector2:
 	var cat := get_tree().get_first_node_in_group("player")
 	var cat_pos: Vector2 = cat.global_position if cat != null else (arena_min + arena_max) * 0.5
 	for i in 24:
 		var p := Vector2(rng.randf_range(play_min.x, play_max.x), rng.randf_range(play_min.y, play_max.y))
-		if p.distance_to(cat_pos) > 58.0:
+		if p.distance_to(cat_pos) > min_distance:
 			return p
 	return Vector2(rng.randf_range(play_min.x, play_max.x), rng.randf_range(play_min.y, play_max.y))
 
@@ -1254,8 +1254,7 @@ func _input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 	if event.is_action_pressed("restart") and (pause_panel == null or not pause_panel.visible):
-		get_tree().paused = false
-		get_tree().reload_current_scene()
+		_restart()
 
 func _toggle_pause() -> void:
 	# Pausing mid-Overdrive would strand the freeze and the colour grade.
@@ -1277,6 +1276,10 @@ func _resume_game() -> void:
 
 func _restart() -> void:
 	_clear_hitstop()
+	# _ready consumes the tutorial flag, so restarting mid-tutorial would
+	# silently drop the player into the real waves. Put it back.
+	if tutorial_active or tutorial_enabled:
+		get_tree().set_meta("tutorial_enabled", true)
 	get_tree().paused = false
 	get_tree().reload_current_scene()
 
@@ -1960,19 +1963,20 @@ const TUTORIAL_STEPS := [
 	{"title": "AIM", "text": "Your MOUSE aims every attack - the cat strikes wherever the cursor is, not where she is facing. Wave it around.",
 		"goal": "aim", "need": 1},
 	{"title": "PAW", "text": "LEFT CLICK to swipe. Fast and cheap - your bread and butter. Aim at the rat and hit it.",
-		"goal": "paw_hit", "need": 4, "dummies": 1},
+		"goal": "paw_hit", "need": 4, "dummies": 1, "dummy_hp": 30},
 	{"title": "DASH", "text": "SPACE to dash. You are briefly untouchable mid-dash - it is your dodge. Try two.",
 		"goal": "dash", "need": 2},
 	{"title": "JAW", "text": "RIGHT CLICK (a quick tap) to bite. It roots you for a beat, so pick your moment - but it hurts, and it makes them bleed.",
-		"goal": "bite", "need": 2, "dummies": 1},
+		"goal": "bite", "need": 2, "dummies": 1, "dummy_hp": 30},
 	{"title": "TAIL", "text": "HOLD RIGHT CLICK to sweep your tail. Barely any damage - it is for flinging a crowd off you when you get swarmed.",
-		"goal": "tail", "need": 2, "dummies": 2},
+		"goal": "tail", "need": 2, "dummies": 2, "dummy_hp": 30},
 	{"title": "LEER", "text": "Press E to LEER. It stuns everything in front of you and MARKS it. Free to use - never hold it back.",
-		"goal": "glare", "need": 1, "dummies": 2},
-	{"title": "EXECUTE", "text": "Marked prey has a red chevron. Kill a marked foe for a bonus EXECUTE. Leer them, then finish them.",
-		"goal": "execute", "need": 1, "dummies": 3},
+		"goal": "glare", "need": 1, "dummies": 2, "dummy_hp": 30},
+	# The only lesson that needs the dummy to actually die, so this one is frail.
+	{"title": "EXECUTE", "text": "Marked prey wears a red chevron. Press E, then kill a marked rat for a bonus EXECUTE.",
+		"goal": "execute", "need": 1, "dummies": 2, "dummy_hp": 5},
 	{"title": "PARRY", "text": "Enemies flash their tell before striking. When it turns WHITE, DASH INTO them to freeze them cold.",
-		"goal": "parry", "need": 1, "armed": 1},
+		"goal": "parry", "need": 1, "armed": 1, "dummy_hp": 40},
 ]
 
 var tutorial_active: bool = false
@@ -2052,8 +2056,12 @@ func _begin_tutorial_step() -> void:
 	if cat != null and is_instance_valid(cat):
 		tut_move_origin = cat.global_position
 	tut_mouse_origin = get_viewport().get_mouse_position()
+	# Every lesson starts with the whole kit off cooldown, so the move being
+	# taught can always be attempted immediately.
+	if cat != null and is_instance_valid(cat) and cat.has_method("tutorial_ready"):
+		cat.tutorial_ready()
 	_update_tutorial_progress()
-	_ensure_tut_dummies(int(step.get("dummies", 0)), int(step.get("armed", 0)))
+	_ensure_tut_dummies(step)
 
 func _update_tutorial_progress() -> void:
 	if not tutorial_active or tutorial_step >= TUTORIAL_STEPS.size():
@@ -2063,30 +2071,35 @@ func _update_tutorial_progress() -> void:
 
 # Practice fodder: enough health to survive the lesson, and (except for the
 # parry step) completely harmless, so nobody dies learning the controls.
-func _ensure_tut_dummies(count: int, armed: int) -> void:
+func _ensure_tut_dummies(step: Dictionary) -> void:
 	_clear_tut_dummies()
-	for i in count:
-		_spawn_tut_dummy(false)
-	for i in armed:
-		_spawn_tut_dummy(true)
+	var hp := int(step.get("dummy_hp", 30))
+	for i in int(step.get("dummies", 0)):
+		_spawn_tut_dummy(false, hp)
+	for i in int(step.get("armed", 0)):
+		_spawn_tut_dummy(true, hp)
 
-func _spawn_tut_dummy(armed: bool) -> void:
+func _spawn_tut_dummy(armed: bool, hp: int) -> void:
 	if rat_scene == null:
 		return
+	# Practice fodder is deliberately tanky (except the EXECUTE lesson, which
+	# needs a kill) so a lesson can be finished on one target instead of the
+	# player chasing a conveyor belt of respawns.
 	var cfg := {
-		"max_health": 3 if armed else 6,
+		"max_health": maxi(hp, 1),
 		"move_speed": 52.0 if armed else 30.0,
 		"nibble_damage": 0, "dash_damage": 0,
 		"score_value": 0,
 		"tint": Color(1.0, 0.85, 0.5) if armed else Color(0.8, 0.9, 1.0),
 		"body_scale": 0.72,
+		"parry_window": float(_diff()["parry"]),
 	}
 	if armed:
 		# Wants to lunge often so the white parry flash comes around quickly.
 		cfg["dash_chance"] = 1.0
-		cfg["dash_cooldown_min"] = 1.1
-		cfg["dash_cooldown_max"] = 1.7
-		cfg["dash_windup"] = 0.6
+		cfg["dash_cooldown_min"] = 0.9
+		cfg["dash_cooldown_max"] = 1.4
+		cfg["dash_windup"] = 0.7
 		cfg["nibble_interval"] = 1.4
 	else:
 		cfg["dash_chance"] = 0.0
@@ -2094,7 +2107,8 @@ func _spawn_tut_dummy(armed: bool) -> void:
 	var e := rat_scene.instantiate()
 	if e.has_method("configure"):
 		e.configure(cfg)
-	e.position = _spawn_point()
+	# Close enough that the lesson starts straight away, not after a long walk.
+	e.position = _spawn_point(38.0)
 	add_child(e)
 	tut_dummies.append(e)
 	if e.has_signal("died"):
@@ -2108,7 +2122,7 @@ func _on_tut_dummy_died(dummy: Node) -> void:
 	var step: Dictionary = TUTORIAL_STEPS[tutorial_step]
 	var wanted := int(step.get("dummies", 0)) + int(step.get("armed", 0))
 	if wanted > 0 and _live_tut_dummies() < wanted:
-		_spawn_tut_dummy(int(step.get("armed", 0)) > 0)
+		_spawn_tut_dummy(int(step.get("armed", 0)) > 0, int(step.get("dummy_hp", 30)))
 
 func _live_tut_dummies() -> int:
 	var n := 0
@@ -2173,7 +2187,9 @@ func _finish_tutorial() -> void:
 	tutorial_panel.visible = false
 	_clear_tut_dummies()
 	_hype("GO HUNT!", Color(1.0, 0.84, 0.35))
-	_set_reward("That's the whole kit. Now use it.")
+	# The Q slot is visible on the ability bar from the first wave, so say what
+	# it is - it cannot be practised here (it needs a boss and a full SS meter).
+	_set_reward("One last thing: fill the style bar to SS in a boss fight, then press Q.")
 	_build_waves()
 	_next_wave()
 

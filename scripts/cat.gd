@@ -679,6 +679,18 @@ func die() -> void:
 # Difficulty handicap, applied by the level once on spawn. Easy hands over a
 # bigger health pool, Hell takes some away; the floor of 4 keeps Hell survivable
 # rather than a one-shot gimmick.
+# Wipe every cooldown so a tutorial lesson can be attempted the instant it is
+# shown. Without this, teaching LEER (5.8s cooldown) and then immediately asking
+# for a LEER-into-EXECUTE means the player presses E, nothing happens, and they
+# flail at the dummies for five seconds wondering what they got wrong.
+func tutorial_ready() -> void:
+	paw_cd = 0.0
+	bite_cd_left = 0.0
+	tail_cd = 0.0
+	leer_cd = 0.0
+	dash_cd_left = 0.0
+	bite_lock_timer = 0.0
+
 func apply_difficulty(bonus_hp: int) -> void:
 	if bonus_hp == 0:
 		return
