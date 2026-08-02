@@ -5,11 +5,11 @@ A top-down hack and slash game based on cats and its preys.
 
 ## How to play
 
-Press m1 for quick attacks/
-tPress m2 for heavy attacks/
-Long-press m2 for flick attack/
-Press space for dash/
-Press Q for over-drive (inspired from Cyberpunk 2077: Edgerunners, only useable in boss battles)
+* Press m1 for quick attacks
+* Press m2 for heavy attacks
+* Long-press m2 for flick attack
+* Press space for dash
+* Press Q for over-drive (inspired from Cyberpunk 2077: Edgerunners, only useable in boss battles)
 
 ## Rules and Goals
 
