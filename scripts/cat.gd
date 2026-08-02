@@ -109,6 +109,8 @@ const CAT_PARRY = preload("uid://igm67v3h80mk")
 const CAT_DIE = preload("uid://dlkb61t56j13g")
 const CAT_HURT = preload("uid://cdwakwq3on3im")
 
+@onready var camera_2d: Camera2D = $"../Camera2D"
+
 func _ready() -> void:
 	# Opt back into pausing (the level root is PROCESS_MODE_ALWAYS).
 	process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -125,6 +127,9 @@ func _ready() -> void:
 	slash.animation_finished.connect(func(): slash.visible = false)
 	bite_fx.animation_finished.connect(func(): bite_fx.visible = false)
 	tail_sweep.animation_finished.connect(func(): tail_sweep.visible = false)
+
+func _process(delta: float) -> void:
+	camera_2d.offset = global_position
 
 func _physics_process(delta: float) -> void:
 	queue_redraw()

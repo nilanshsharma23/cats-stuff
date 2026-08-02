@@ -13,6 +13,7 @@ config_version=5
 config/name="cats&stuff"
 run/main_scene="uid://cmainmenu01"
 config/features=PackedStringArray("4.7", "Forward Plus")
+boot_splash/bg_color=Color(0.18666491, 0.63836, 0.67840755, 1)
 config/icon="res://icon.svg"
 
 [audio]
@@ -25,8 +26,8 @@ SoundManager="*uid://nj3ckfjslyto"
 
 [display]
 
-window/size/viewport_width=256
-window/size/viewport_height=144
+window/size/viewport_width=320
+window/size/viewport_height=180
 window/size/mode=3
 window/size/window_width_override=1280
 window/size/window_height_override=720

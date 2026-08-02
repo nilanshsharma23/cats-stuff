@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://bw88kfm0xytpv"]
+
+[ext_resource type="Shader" uid="uid://bovaptbw6t3nq" path="res://shaders/vignette.gdshader" id="1_fgys5"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_eoth6"]
+shader = ExtResource("1_fgys5")
+shader_parameter/alpha = 0.6
+shader_parameter/inner_radius = 0.0
+shader_parameter/outer_radius = 1.2
+
+[node name="Vignette" type="ColorRect" unique_id=647772173]
+material = SubResource("ShaderMaterial_eoth6")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)

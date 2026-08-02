@@ -210,6 +210,8 @@ const RAT_BOSS_1 = preload("uid://bhbk4b83r3n3r")
 const FROG_BOSS_2 = preload("uid://myjklip14q8g")
 const PIGEON_BOSS_3 = preload("uid://nx84smyo7dmp")
 
+@onready var camera_2d: Camera2D = $Camera2D
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	get_tree().paused = false
@@ -231,7 +233,7 @@ func _ready() -> void:
 		tutorial_enabled = false
 	banner.modulate.a = 0.0
 	_dim_floor()
-	_setup_camera()
+	#_setup_camera()
 	_build_result_panel()
 	_build_hud()
 	_build_ability_bar()
@@ -343,9 +345,9 @@ func _dim_floor() -> void:
 
 func _setup_camera() -> void:
 	cam = Camera2D.new()
-	cam.position = Vector2(128, 72)
+	cam.position = Vector2(160, 90)
 	# A hair of zoom-in gives margin so screen shake never bares the arena edge.
-	cam.zoom = Vector2(1.04, 1.04)
+	cam.zoom = Vector2(1.0, 1.0)
 	add_child(cam)
 	cam.make_current()
 
