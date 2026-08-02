@@ -7,6 +7,7 @@ const VIGNETTE: GDScript = preload("res://scripts/vignette.gd")
 const NEON_SHADER: Shader = preload("res://shaders/neon.gdshader")
 const PLAN_MARKER: GDScript = preload("res://scripts/plan_marker.gd")
 const TARGET_MARKER: GDScript = preload("res://scripts/target_marker.gd")
+const HP_PIPS: GDScript = preload("res://scripts/hp_pips.gd")
 
 # --- OVERDRIVE: the boss-only ultimate --------------------------------------
 #
@@ -84,7 +85,9 @@ var ROSTER := {
 		"cfg": {"is_boss": true, "max_health": 104, "move_speed": 60.0,
 			"circle_radius": 36.0, "cross_width": 13.0, "circle_damage": 1,
 			"cross_damage": 1, "tint": Color(1.0, 1.0, 1.0, 1.0),
-			"body_scale": 0.14, "score_value": 900}
+			# 0.14 was for the old whole-spritesheet texture; against a single
+			# sliced 54x46 frame it rendered the final boss at 8x6 pixels.
+			"body_scale": 0.62, "score_value": 900}
 	},
 }
 
@@ -163,8 +166,8 @@ var boss_fill: ColorRect
 var boss_bar_width: float = 188.0
 var ability_panel: HBoxContainer
 var ability_slots: Dictionary = {}
-var hud_panel: ColorRect
-var score_panel: ColorRect
+var hud_panel: Control
+var score_panel: Control
 # Base render resolution (320x180 since the viewport bump) and the measured
 # arena, both used for camera clamping and for keeping spawns inside the room.
 var VIEW_SIZE := Vector2(
@@ -178,6 +181,7 @@ var play_max: Vector2 = Vector2(304, 164)
 var danger_vignette: Control
 var style_bar_bg: ColorRect
 var style_bar_fill: ColorRect
+var hp_pips: Control
 var neon_rect: ColorRect
 var neon_mat: ShaderMaterial
 var ult_label: Label
@@ -333,9 +337,15 @@ func _update_danger(_delta: float) -> void:
 	danger_vignette.set_intensity(clampf((0.34 - frac) / 0.34, 0.0, 1.0))
 
 func _set_player_health_visible(shown: bool) -> void:
+	# The cat scene still carries its old TextureProgressBar; the heart pips
+	# replace it, so that one stays hidden.
 	var cat := get_tree().get_first_node_in_group("player")
 	if cat != null and cat.has_node("UI/Control"):
-		cat.get_node("UI/Control").visible = shown
+		cat.get_node("UI/Control").visible = false
+	if hp_pips != null:
+		hp_pips.visible = shown
+		if shown and cat != null and is_instance_valid(cat):
+			hp_pips.set_health(int(cat.get("health")), int(cat.get("max_health")))
 
 func _sync_fight_ui() -> void:
 	var shown := _is_fight_active()
@@ -403,8 +413,10 @@ func _compute_arena() -> void:
 	else:
 		arena_min = Vector2(rect.position.x * tile.x, rect.position.y * tile.y)
 		arena_max = Vector2(rect.end.x * tile.x, rect.end.y * tile.y)
-	# Enemies and spawns stay a tile inside the wall ring.
-	var inset := Vector2(tile) * 0.9
+	# The measured rect INCLUDES the wall ring, so back off a full tile plus a
+	# margin - at 0.9 tiles, spawns landed on the inner edge of the wall and
+	# wide sprites (a 49px brute) hung visibly into it.
+	var inset := Vector2(tile) * 1.5
 	play_min = arena_min + inset
 	play_max = arena_max - inset
 
@@ -691,7 +703,7 @@ func _spawn_popup(pos: Vector2, text: String) -> void:
 	t.tween_callback(l.queue_free)
 
 func _hide_hud() -> void:
-	for n in [hud_panel, score_panel, wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel, ability_panel, style_bar_bg, style_bar_fill]:
+	for n in [hud_panel, score_panel, wave_label, enemies_label, score_label, combo_label, reward_label, boss_panel, ability_panel, style_bar_bg, style_bar_fill, hp_pips]:
 		if n != null:
 			n.visible = false
 	if danger_vignette != null:
@@ -1246,6 +1258,12 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var key_event := event as InputEventKey
 		if key_event.pressed and not key_event.echo:
+			# Skip a lesson the player has been stuck on for a while.
+			if tutorial_active and tut_stuck_timer >= TUT_STUCK_AFTER and not tut_advancing:
+				if key_event.keycode == KEY_ENTER or key_event.keycode == KEY_KP_ENTER:
+					_skip_tutorial_step()
+					get_viewport().set_input_as_handled()
+					return
 			if waiting_for_wave_start and break_panel != null and break_panel.visible and not shop_panel.visible:
 				_start_waited_wave()
 				get_viewport().set_input_as_handled()
@@ -1321,7 +1339,10 @@ func _on_style_event(kind: String, amount: int) -> void:
 	if amount < 0:
 		if kind == "damage_taken":
 			_hitstop(0.035, 0.12)
-			_flash(Color(1.0, 0.2, 0.2), 0.5)
+			# Kept modest: i-frames still allow ~4 hits a second in a swarm, and
+			# a heavy full-screen red at that rate is a strobe you cannot see the
+			# fight through. The heart pips carry the information now.
+			_flash(Color(1.0, 0.2, 0.2), 0.3)
 			_shake(2.6)
 			no_glare_chain = 0
 			last_milestone = 0
@@ -1439,6 +1460,11 @@ func _build_hud() -> void:
 	style_bar_fill.color = Color(1.0, 0.82, 0.25, 1.0)
 	style_bar_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	$UI.add_child(style_bar_fill)
+	hp_pips = HP_PIPS.new()
+	hp_pips.name = "HpPips"
+	hp_pips.position = Vector2(11, 163)
+	hp_pips.size = Vector2(120, 8)
+	$UI.add_child(hp_pips)
 	enemies_label = _hud_label(Vector2(0, 0), Vector2(1, 1), Color(1.0, 0.62, 0.55, 1.0), 7, HORIZONTAL_ALIGNMENT_RIGHT)
 	enemies_label.visible = false
 	reward_label = _hud_label(Vector2(60, 122), Vector2(200, 12), Color(0.55, 1.0, 0.86, 1.0), 8, HORIZONTAL_ALIGNMENT_CENTER)
@@ -1591,13 +1617,22 @@ func _set_ability_slot(key: String, cd: float, max_cd: float) -> void:
 	fill.color = slot["color"] if ready else Color(0.12, 0.12, 0.15, 0.96)
 	label.text = String(slot["hint"]) if ready else "%.1f" % cd
 
-func _hud_plate(title: String, pos: Vector2, box: Vector2, color: Color) -> ColorRect:
-	var plate := ColorRect.new()
+# Rounded, softly-bordered plate rather than a flat black rectangle, so the HUD
+# reads as the same family as the menus and result cards.
+func _hud_plate(title: String, pos: Vector2, box: Vector2, color: Color) -> Control:
+	var plate := Panel.new()
 	plate.name = title
 	plate.position = pos
 	plate.size = box
-	plate.color = color
 	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.set_corner_radius_all(3)
+	style.set_border_width_all(1)
+	style.border_color = Color(0.55, 0.58, 0.72, 0.42)
+	style.shadow_color = Color(0, 0, 0, 0.35)
+	style.shadow_size = 2
+	plate.add_theme_stylebox_override("panel", style)
 	$UI.add_child(plate)
 	return plate
 
@@ -2034,6 +2069,8 @@ var tut_move_origin: Vector2 = Vector2.ZERO
 var tut_mouse_origin: Vector2 = Vector2.ZERO
 var tut_ready_timer: float = 0.0
 var tut_advancing: bool = false
+var tut_stuck_timer: float = 0.0
+const TUT_STUCK_AFTER: float = 22.0
 var tutorial_title: Label
 var tutorial_key: Label
 var tutorial_task: Label
@@ -2113,6 +2150,8 @@ func _begin_tutorial_step() -> void:
 	var step: Dictionary = TUTORIAL_STEPS[tutorial_step]
 	tut_progress = 0
 	tut_ready_timer = 0.35
+	tut_stuck_timer = 0.0
+	tutorial_progress.add_theme_color_override("font_color", Color(0.5, 1.0, 0.86, 1.0))
 	tutorial_title.text = String(step["title"])
 	tutorial_step_label.text = "LESSON %d / %d" % [tutorial_step + 1, TUTORIAL_STEPS.size()]
 	tutorial_key.text = String(step.get("key", ""))
@@ -2262,6 +2301,13 @@ func _tick_tutorial(delta: float) -> void:
 	if not tutorial_active or tut_advancing or tutorial_step >= TUTORIAL_STEPS.size():
 		return
 	tut_ready_timer = maxf(tut_ready_timer - delta, 0.0)
+	# Escape hatch. PARRY in particular is a real execution test, and a tutorial
+	# nobody can leave is worse than one somebody skipped - so after a while,
+	# offer ENTER to move on.
+	tut_stuck_timer += delta
+	if tut_stuck_timer >= TUT_STUCK_AFTER:
+		tutorial_progress.text = "ENTER to skip"
+		tutorial_progress.add_theme_color_override("font_color", Color(1.0, 0.72, 0.4, 1.0))
 	var goal := String(TUTORIAL_STEPS[tutorial_step]["goal"])
 	if goal == "move":
 		var cat := get_tree().get_first_node_in_group("player")
@@ -2271,6 +2317,18 @@ func _tick_tutorial(delta: float) -> void:
 	elif goal == "aim":
 		if get_viewport().get_mouse_position().distance_to(tut_mouse_origin) > 60.0:
 			_tutorial_credit("aim")
+
+func _skip_tutorial_step() -> void:
+	if not tutorial_active or tut_advancing:
+		return
+	tut_advancing = true
+	tut_progress = 0
+	tutorial_step += 1
+	_set_reward("Skipped - you can always come back to the tutorial.")
+	await get_tree().create_timer(0.4, false).timeout
+	tut_advancing = false
+	if tutorial_active:
+		_begin_tutorial_step()
 
 func _finish_tutorial() -> void:
 	tutorial_active = false
