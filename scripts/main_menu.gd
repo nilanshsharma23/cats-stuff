@@ -78,7 +78,10 @@ func _launch(mode: int, tutorial: bool, endless_mode: bool) -> void:
 	get_tree().set_meta("difficulty", difficulty)
 	get_tree().set_meta("tutorial_enabled", tutorial)
 	get_tree().set_meta("endless_enabled", endless_mode)
-	get_tree().change_scene_to_file("res://scenes/level1.tscn")
+	if last_score == 0:
+		get_tree().change_scene_to_file("res://scenes/cutscene.tscn")
+	else:
+		get_tree().change_scene_to_file("res://scenes/level1.tscn")
 
 func _on_quit() -> void:
 	get_tree().quit()

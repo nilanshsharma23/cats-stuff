@@ -1,0 +1,317 @@
+[gd_scene format=4 uid="uid://it8po5yqd5fw"]
+
+[ext_resource type="Script" uid="uid://ckv6pxi7aprj7" path="res://scenes/cutscene.gd" id="1_3ptll"]
+[ext_resource type="TileSet" uid="uid://m6004rabgql0" path="res://tileset.tres" id="1_edmg7"]
+[ext_resource type="FontFile" uid="uid://ceu8lo5rbvvec" path="res://fonts/Pixellari.ttf" id="2_fs8wb"]
+[ext_resource type="PackedScene" uid="uid://bw88kfm0xytpv" path="res://scenes/vignette.tscn" id="3_3ptll"]
+[ext_resource type="Texture2D" uid="uid://danxabbtk13lq" path="res://sprites/organizer.png" id="3_bb0yx"]
+[ext_resource type="Shader" uid="uid://jbco1ijydx3f" path="res://shaders/cat.gdshader" id="4_3ptll"]
+[ext_resource type="SpriteFrames" uid="uid://bcatframes01" path="res://sprites/cat_frames.tres" id="5_d18fx"]
+
+[sub_resource type="Shader" id="Shader_d18fx"]
+code = "shader_type canvas_item;
+
+uniform float alpha = 1.0;
+uniform float inner_radius = 0.0;
+uniform float outer_radius = 1.0;
+
+void fragment() {
+	float x = abs(UV.r-.5)*2.0;
+	float y = abs(UV.g-.5)*2.0;
+	float q = 1.0-(1.0-sqrt(x*x+y*y)/outer_radius)/(1.0-inner_radius);
+	COLOR = vec4(0, 0, 0, q*alpha);
+}"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_75brc"]
+shader = SubResource("Shader_d18fx")
+shader_parameter/alpha = 0.0
+shader_parameter/inner_radius = 0.0
+shader_parameter/outer_radius = 1.2
+
+[sub_resource type="Animation" id="Animation_75brc"]
+length = 0.001
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("CanvasLayer/Control/OrganizerDialog:text")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 1,
+"values": [""]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("CanvasLayer/Control/CatDialog:text")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 1,
+"values": [""]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Organizer:rotation")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.0]
+}
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Organizer:position")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(186, 138)]
+}
+tracks/4/type = "value"
+tracks/4/imported = false
+tracks/4/enabled = true
+tracks/4/path = NodePath("CanvasLayer/Vignette:material:shader_parameter/alpha")
+tracks/4/interp = 1
+tracks/4/loop_wrap = true
+tracks/4/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.0]
+}
+tracks/5/type = "value"
+tracks/5/imported = false
+tracks/5/enabled = true
+tracks/5/path = NodePath("CanvasLayer/Vignette:material:shader_parameter/outer_radius")
+tracks/5/interp = 1
+tracks/5/loop_wrap = true
+tracks/5/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [1.2]
+}
+tracks/6/type = "value"
+tracks/6/imported = false
+tracks/6/enabled = true
+tracks/6/path = NodePath("Camera2D:position")
+tracks/6/interp = 1
+tracks/6/loop_wrap = true
+tracks/6/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(160, 88)]
+}
+tracks/7/type = "value"
+tracks/7/imported = false
+tracks/7/enabled = true
+tracks/7/path = NodePath("Camera2D:zoom")
+tracks/7/interp = 1
+tracks/7/loop_wrap = true
+tracks/7/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(1, 1)]
+}
+
+[sub_resource type="Animation" id="Animation_v50sc"]
+resource_name = "main"
+length = 19.0
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("CanvasLayer/Control/OrganizerDialog:text")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0.3, 1, 2.8333333, 5, 7.0333333, 8.8, 11.033334),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1, 1),
+"update": 1,
+"values": ["", "hi, i'm the non specific
+organizer (heavily inspired by 
+pthallo)", "this is my cat,
+heavily inspired by
+the cat", "now i,
+the non specific organizer
+will go buy some non specicic
+milk", "", "okay, bye", ""]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("CanvasLayer/Control/CatDialog:text")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(5.59, 7.0333333, 8.8),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 1,
+"values": ["", "meow.", ""]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Organizer:rotation")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0.017985644, 9.025758, 9.0566845, 10.016685, 11.206684, 12.006684, 13.0814495, 14.268627, 14.968627),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1, 1, 1, 1),
+"update": 0,
+"values": [0.0, 0.0, 0.0, 0.51138145, -0.5846853, 0.073303826, -0.43807763, 0.43807763, 3.1415927]
+}
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Organizer:position")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0.017985644, 9.025758, 16.033333),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [Vector2(186, 138), Vector2(186, 138), Vector2(336, 144)]
+}
+tracks/4/type = "value"
+tracks/4/imported = false
+tracks/4/enabled = true
+tracks/4/path = NodePath("CanvasLayer/Vignette:material:shader_parameter/alpha")
+tracks/4/interp = 1
+tracks/4/loop_wrap = true
+tracks/4/keys = {
+"times": PackedFloat32Array(0, 16.02258, 19),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, 0.0, 0.86]
+}
+tracks/5/type = "value"
+tracks/5/imported = false
+tracks/5/enabled = true
+tracks/5/path = NodePath("CanvasLayer/Vignette:material:shader_parameter/outer_radius")
+tracks/5/interp = 1
+tracks/5/loop_wrap = true
+tracks/5/keys = {
+"times": PackedFloat32Array(0, 16.02258, 19),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [1.2, 1.2, 1.395]
+}
+tracks/6/type = "value"
+tracks/6/imported = false
+tracks/6/enabled = true
+tracks/6/path = NodePath("Camera2D:position")
+tracks/6/interp = 1
+tracks/6/loop_wrap = true
+tracks/6/keys = {
+"times": PackedFloat32Array(16.09152, 19),
+"transitions": PackedFloat32Array(2, 2),
+"update": 0,
+"values": [Vector2(160, 88), Vector2(112, 144)]
+}
+tracks/7/type = "value"
+tracks/7/imported = false
+tracks/7/enabled = true
+tracks/7/path = NodePath("Camera2D:zoom")
+tracks/7/interp = 1
+tracks/7/loop_wrap = true
+tracks/7/keys = {
+"times": PackedFloat32Array(16.09152, 19),
+"transitions": PackedFloat32Array(2, 2),
+"update": 0,
+"values": [Vector2(1, 1), Vector2(4.195, 4.195)]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_wxq4c"]
+_data = {
+&"RESET": SubResource("Animation_75brc"),
+&"main": SubResource("Animation_v50sc")
+}
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_q01xw"]
+shader = ExtResource("4_3ptll")
+shader_parameter/active = false
+shader_parameter/flash_color = Color(1, 1, 1, 1)
+shader_parameter/outline_enabled = true
+shader_parameter/outline_color = Color(0.05, 0.03, 0.1, 1)
+shader_parameter/outline_width = 1.0
+shader_parameter/alpha_cutoff = 0.35
+
+[node name="Cutscene" type="Node2D" unique_id=657759906]
+script = ExtResource("1_3ptll")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=2075334929]
+position = Vector2(160, 88)
+
+[node name="Tiles" type="Node2D" parent="." unique_id=785934822]
+
+[node name="TileMapLayer" type="TileMapLayer" parent="Tiles" unique_id=7941077]
+tile_map_data = PackedByteArray("AAABAAEAAQALAAMAAAABAAIAAQALAAMAAAACAAEAAQALAAIAAAACAAIAAQALAAMAAAABAAMAAQALAAIAAAABAAQAAQALAAMAAAACAAMAAQALAAIAAAACAAQAAQALAAMAAAABAAUAAQALAAIAAAABAAYAAQALAAMAAAACAAUAAQALAAIAAAACAAYAAQALAAMAAAABAAcAAQALAAIAAAABAAgAAQALAAMAAAACAAcAAQALAAIAAAACAAgAAQALAAMAAAADAAEAAQAKAAIAAAADAAIAAQAKAAMAAAAEAAEAAQALAAIAAAAEAAIAAQALAAMAAAADAAMAAQAKAAIAAAADAAQAAQAKAAMAAAAEAAMAAQALAAIAAAAEAAQAAQALAAMAAAADAAUAAQAKAAIAAAADAAYAAQAKAAMAAAAEAAUAAQALAAIAAAAEAAYAAQALAAMAAAADAAcAAQAKAAIAAAADAAgAAQAKAAMAAAAEAAcAAQALAAIAAAAEAAgAAQALAAMAAAAFAAEAAQAKAAIAAAAFAAIAAQAKAAMAAAAGAAEAAQALAAIAAAAGAAIAAQALAAMAAAAFAAMAAQAKAAIAAAAFAAQAAQAKAAMAAAAGAAMAAQALAAIAAAAGAAQAAQALAAMAAAAFAAUAAQAKAAIAAAAFAAYAAQAKAAMAAAAGAAUAAQALAAIAAAAGAAYAAQALAAMAAAAFAAcAAQAKAAIAAAAFAAgAAQAKAAMAAAAGAAcAAQALAAIAAAAGAAgAAQALAAMAAAAHAAEAAQAKAAIAAAAHAAIAAQAKAAMAAAAIAAEAAQALAAIAAAAIAAIAAQALAAMAAAAHAAMAAQAKAAIAAAAHAAQAAQAKAAMAAAAIAAMAAQALAAIAAAAIAAQAAQALAAMAAAAHAAUAAQAKAAIAAAAHAAYAAQAKAAMAAAAIAAUAAQALAAIAAAAIAAYAAQALAAMAAAAHAAcAAQAKAAIAAAAHAAgAAQAKAAMAAAAIAAcAAQALAAIAAAAIAAgAAQALAAMAAAAJAAEAAQAKAAIAAAAJAAIAAQAKAAMAAAAKAAEAAQALAAIAAAAKAAIAAQALAAMAAAAJAAMAAQAKAAIAAAAJAAQAAQAKAAMAAAAKAAMAAQALAAIAAAAKAAQAAQALAAMAAAAJAAUAAQAKAAIAAAAJAAYAAQAKAAMAAAAKAAUAAQALAAIAAAAKAAYAAQALAAMAAAAJAAcAAQAKAAIAAAAJAAgAAQAKAAMAAAAKAAcAAQALAAIAAAAKAAgAAQALAAMAAAALAAEAAQAKAAIAAAALAAIAAQAKAAMAAAAMAAEAAQALAAIAAAAMAAIAAQALAAMAAAALAAMAAQAKAAIAAAALAAQAAQAKAAMAAAAMAAMAAQALAAIAAAAMAAQAAQALAAMAAAALAAUAAQAKAAIAAAALAAYAAQAKAAMAAAAMAAUAAQALAAIAAAAMAAYAAQALAAMAAAALAAcAAQAKAAIAAAALAAgAAQAKAAMAAAAMAAcAAQALAAIAAAAMAAgAAQALAAMAAAANAAEAAQAKAAIAAAANAAIAAQAKAAMAAAAOAAEAAQALAAIAAAAOAAIAAQALAAMAAAANAAMAAQAKAAIAAAANAAQAAQAKAAMAAAAOAAMAAQALAAIAAAAOAAQAAQALAAMAAAANAAUAAQAKAAIAAAANAAYAAQAKAAMAAAAOAAUAAQALAAIAAAAOAAYAAQALAAMAAAANAAcAAQAKAAIAAAANAAgAAQAKAAMAAAAOAAcAAQALAAIAAAAOAAgAAQALAAMAAAAPAAEAAQAKAAIAAAAPAAIAAQAKAAMAAAAQAAEAAQALAAIAAAAQAAIAAQALAAMAAAAPAAMAAQAKAAIAAAAPAAQAAQAKAAMAAAAQAAMAAQALAAIAAAAQAAQAAQALAAMAAAAPAAUAAQAKAAIAAAAPAAYAAQAKAAMAAAAQAAUAAQALAAIAAAAQAAYAAQALAAMAAAAPAAcAAQAKAAIAAAAPAAgAAQAKAAMAAAAQAAcAAQALAAIAAAAQAAgAAQALAAMAAAARAAEAAQAKAAIAAAARAAIAAQAKAAMAAAASAAEAAQALAAIAAAASAAIAAQALAAMAAAARAAMAAQAKAAIAAAARAAQAAQAKAAMAAAASAAMAAQALAAIAAAASAAQAAQALAAMAAAARAAUAAQAKAAIAAAARAAYAAQAKAAMAAAASAAUAAQALAAIAAAASAAYAAQALAAMAAAARAAcAAQAKAAIAAAARAAgAAQAKAAMAAAASAAcAAQALAAIAAAASAAgAAQALAAMAAAABAAAAAQALAAIAAAACAAAAAQAKAAEAAAADAAAAAQAKAAEAAAAEAAAAAQAKAAEAAAAFAAAAAQAKAAEAAAAGAAAAAQAKAAEAAAAHAAAAAQAKAAEAAAAIAAAAAQAKAAEAAAAJAAAAAQAKAAEAAAAKAAAAAQAKAAEAAAALAAAAAQAKAAEAAAAMAAAAAQAKAAEAAAANAAAAAQAKAAEAAAAOAAAAAQAKAAEAAAAPAAAAAQAKAAEAAAAQAAAAAQAKAAEAAAARAAAAAQAKAAEAAAASAAAAAQAKAAEAAAABAP//AQAJAAAAAAACAP//AQAKAAAAAAADAP//AQALAAAAAAAEAP//AQAMAAAAAAAFAP//AQAJAAAAAAAGAP//AQAKAAAAAAAHAP//AQALAAAAAAAIAP//AQAMAAAAAAAJAP//AQAJAAAAAAAKAP//AQAJAAAAAAALAP//AQAKAAAAAAAMAP//AQALAAAAAAANAP//AQAMAAAAAAAOAP//AQAJAAAAAAAPAP//AQAJAAAAAAAQAP//AQAKAAAAAAARAP//AQALAAAAAAASAP//AQAMAAAAAAATAP//AQALAAAAAAATAAAAAQAMAAIAAAATAAEAAQAMAAMAAAATAAIAAQAMAAIAAAATAAMAAQAMAAMAAAATAAQAAQAMAAIAAAATAAUAAQAMAAMAAAATAAYAAQAMAAIAAAATAAcAAQAMAAMAAAATAAgAAQAMAAMAAAATAAkAAQALAAIAAAATAAoAAQALAAMAAAARAAkAAQAKAAIAAAARAAoAAQAKAAMAAAASAAkAAQAKAAIAAAASAAoAAQAKAAMAAAAPAAkAAQAKAAIAAAAPAAoAAQAKAAMAAAAQAAkAAQALAAIAAAAQAAoAAQALAAMAAAAJAAkAAQAKAAIAAAAJAAoAAQAKAAMAAAAKAAkAAQALAAIAAAAKAAoAAQALAAMAAAALAAkAAQAKAAIAAAALAAoAAQAKAAMAAAAMAAkAAQALAAIAAAAMAAoAAQALAAMAAAANAAkAAQAKAAIAAAANAAoAAQAKAAMAAAAOAAkAAQALAAIAAAAOAAoAAQALAAMAAAAHAAkAAQAKAAIAAAAHAAoAAQAKAAMAAAAIAAkAAQALAAIAAAAIAAoAAQALAAMAAAAFAAkAAQAKAAIAAAAFAAoAAQAKAAMAAAAGAAkAAQALAAIAAAAGAAoAAQALAAMAAAADAAkAAQAKAAIAAAADAAoAAQAKAAMAAAAEAAkAAQALAAIAAAAEAAoAAQALAAMAAAABAAkAAQALAAIAAAABAAoAAQALAAMAAAACAAkAAQALAAIAAAACAAoAAQALAAMAAAAAAAkAAQAKAAIAAAAAAAoAAQAKAAMAAAAAAAcAAQAKAAIAAAAAAAgAAQAKAAMAAAAAAAUAAQAKAAIAAAAAAAYAAQAKAAMAAAAAAAMAAQAKAAIAAAAAAAQAAQAKAAMAAAAAAAEAAQAKAAMAAAAAAAIAAQAKAAMAAAAAAAAAAQAKAAIAAAAUAP//AQARAAAAAAAUAAAAAQARAAIAAAAUAAEAAQARAAIAAAAUAAIAAQARAAIAAAAUAAMAAQARAAIAAAAUAAQAAQARAAIAAAAUAAUAAQARAAIAAAAUAAYAAQARAAIAAAAUAAcAAQARAAIAAAAUAAgAAQARAAIAAAAUAAkAAQARAAIAAAAUAAoAAQARAAIAAAAUAAsAAQARAAgAAAATAAsAAQAOAAgAAAASAAsAAQAOAAgAAAARAAsAAQAOAAgAAAAQAAsAAQAOAAgAAAAPAAsAAQAOAAgAAAAOAAsAAQAOAAgAAAANAAsAAQAOAAgAAAAMAAsAAQAOAAgAAAALAAsAAQAOAAgAAAAKAAsAAQAOAAgAAAAJAAsAAQAOAAgAAAAIAAsAAQAOAAgAAAAHAAsAAQAOAAgAAAAGAAsAAQAOAAgAAAAFAAsAAQAOAAgAAAAEAAsAAQAOAAgAAAADAAsAAQAOAAgAAAACAAsAAQAOAAgAAAABAAsAAQAOAAgAAAAAAAsAAQAOAAgAAAD//wsAAQAAAAgAAAD//woAAQAAAAEAAAD//wkAAQAAAAEAAAD//wgAAQAAAAEAAAD//wcAAQAAAAEAAAD//wYAAQAAAAEAAAD//wUAAQAAAAEAAAD//wQAAQAAAAEAAAD//wMAAQAAAAEAAAD//wIAAQAAAAEAAAD//wEAAQAAAAEAAAD//wAAAQAAAAEAAAD/////AQAAAAAAAAAAAP//AQACAAAAAAA=")
+tile_set = ExtResource("1_edmg7")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=837148249]
+
+[node name="Control" type="Control" parent="CanvasLayer" unique_id=369798304]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="OrganizerDialog" type="Label" parent="CanvasLayer/Control" unique_id=700772298]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -232.0
+offset_right = -14.0
+offset_bottom = 73.0
+grow_horizontal = 0
+theme_override_constants/outline_size = 2
+theme_override_fonts/font = ExtResource("2_fs8wb")
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="CatDialog" type="Label" parent="CanvasLayer/Control" unique_id=1280686304]
+layout_mode = 1
+offset_left = 16.0
+offset_right = 234.0
+offset_bottom = 73.0
+theme_override_colors/font_color = Color(0.15487596, 0.154876, 0.15487596, 1)
+theme_override_constants/outline_size = 2
+theme_override_fonts/font = ExtResource("2_fs8wb")
+vertical_alignment = 1
+
+[node name="Vignette" parent="CanvasLayer" unique_id=647772173 instance=ExtResource("3_3ptll")]
+material = SubResource("ShaderMaterial_75brc")
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=1299999658]
+libraries/ = SubResource("AnimationLibrary_wxq4c")
+autoplay = &"main"
+
+[node name="Organizer" type="Sprite2D" parent="." unique_id=1998126142]
+position = Vector2(186, 138)
+texture = ExtResource("3_bb0yx")
+
+[node name="Anim" type="AnimatedSprite2D" parent="." unique_id=197805741]
+material = SubResource("ShaderMaterial_q01xw")
+position = Vector2(112, 144)
+scale = Vector2(0.78, 0.78)
+sprite_frames = ExtResource("5_d18fx")
+animation = &"idle_side"
+autoplay = "idle_front"
+
+[connection signal="animation_finished" from="AnimationPlayer" to="." method="_on_animation_player_animation_finished"]
