@@ -6,6 +6,7 @@ const PICKUP: GDScript = preload("res://scripts/pickup.gd")
 const VIGNETTE: GDScript = preload("res://scripts/vignette.gd")
 const NEON_SHADER: Shader = preload("res://shaders/neon.gdshader")
 const PLAN_MARKER: GDScript = preload("res://scripts/plan_marker.gd")
+const TARGET_MARKER: GDScript = preload("res://scripts/target_marker.gd")
 
 # --- OVERDRIVE: the boss-only ultimate --------------------------------------
 #
@@ -1529,6 +1530,30 @@ func _update_ability_bar() -> void:
 	_set_ability_slot("TAIL", float(cat.get("tail_cd")), float(cat.get("tail_cooldown")))
 	_set_ability_slot("GLARE", float(cat.get("leer_cd")), float(cat.get("leer_cooldown")))
 	_update_ult_slot()
+	_highlight_tutorial_slot()
+
+# During a lesson, pulse the ability-bar slot it is teaching. This is what ties
+# "LEFT CLICK" on the card to the icon the player will be reading for the rest
+# of the game, instead of the bar being six unexplained hexagons.
+func _highlight_tutorial_slot() -> void:
+	if not tutorial_active or tutorial_step >= TUTORIAL_STEPS.size():
+		return
+	var key := String(TUTORIAL_STEPS[tutorial_step].get("slot", ""))
+	if key == "" or not ability_slots.has(key):
+		return
+	# Every ability is off cooldown during a lesson, so the whole bar lights up
+	# and a merely-recoloured slot vanishes into it. Mute the rest.
+	for other in ability_slots:
+		if String(other) == key:
+			continue
+		var dim_slot: Dictionary = ability_slots[other]
+		var dim_fill: Polygon2D = dim_slot["fill"]
+		dim_fill.color = Color(0.16, 0.17, 0.22, 0.9)
+	var slot: Dictionary = ability_slots[key]
+	var fill: Polygon2D = slot["fill"]
+	var pulse: float = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.009)
+	fill.scale = Vector2.ONE
+	fill.color = Color(1.0, 0.92, 0.35).lerp(Color(1.0, 1.0, 0.85), pulse)
 
 # The ultimate has no cooldown - it is gated on being in a boss fight with a
 # full SS meter, so the slot fills with the meter and only lights up when the
@@ -1604,7 +1629,11 @@ func _refresh_hud() -> void:
 	# Mode is tagged onto the wave plate rather than announced once, so you can
 	# always see what you signed up for. MEDIUM is the default and stays unmarked.
 	var tag := "" if difficulty == 1 else "  %s" % String(_diff()["name"])
-	if endless:
+	# No waves exist yet during the tutorial, so the normal readout renders as
+	# the nonsense "WAVE 1/0 LEFT 01".
+	if tutorial_active:
+		wave_label.text = "TUTORIAL%s" % tag
+	elif endless:
 		wave_label.text = "ENDLESS  W%d   LEFT %02d%s" % [wave_index + 1, left, tag]
 	else:
 		wave_label.text = "WAVE %d/%d   LEFT %02d%s" % [clampi(wave_index + 1, 1, _normal_wave_count()), _normal_wave_count(), left, tag]
@@ -1952,30 +1981,49 @@ func _build_pause_panel() -> void:
 # what the move is FOR, and waits on the player actually performing it - no
 # wall of text up front, and no way to skip past something untried.
 #
+# Each lesson is split into three separate things so none of them can hide
+# inside the others: the KEY you press, one short line of what the move is FOR,
+# and the TASK you have to complete. Prose that buries the input ("LEFT CLICK to
+# swipe, fast and cheap, your bread and butter...") is exactly what makes a
+# tutorial hard to follow.
+#
+#   key     - shown big and bright; the thing to press
+#   task    - the imperative, paired with the x/y counter
+#   text    - one line of why the move exists
+#   slot    - ability-bar slot to pulse, so the lesson points at its own icon
 #   goal    - the style_event kind that counts as progress ("move"/"aim" are
 #             polled instead, since the cat does not emit those)
 #   need    - how many times to do it
 #   dummies - practice rats to keep alive during the step
 #   armed   - dummies that wind up attacks (for the parry lesson)
 const TUTORIAL_STEPS := [
-	{"title": "PROWL", "text": "WASD or the ARROW KEYS to move.",
+	{"title": "MOVE", "key": "W A S D", "task": "Walk around",
+		"text": "Arrow keys work too.",
 		"goal": "move", "need": 1},
-	{"title": "AIM", "text": "Your MOUSE aims every attack - the cat strikes wherever the cursor is, not where she is facing. Wave it around.",
+	{"title": "AIM", "key": "MOUSE", "task": "Move the mouse",
+		"text": "You always strike toward the cursor, not where you face.",
 		"goal": "aim", "need": 1},
-	{"title": "PAW", "text": "LEFT CLICK to swipe. Fast and cheap - your bread and butter. Aim at the rat and hit it.",
+	{"title": "PAW", "key": "LEFT CLICK", "task": "Hit the rat", "slot": "PAW",
+		"text": "Your fast, cheap basic attack.",
 		"goal": "paw_hit", "need": 4, "dummies": 1, "dummy_hp": 30},
-	{"title": "DASH", "text": "SPACE to dash. You are briefly untouchable mid-dash - it is your dodge. Try two.",
+	{"title": "DASH", "key": "SPACE", "task": "Dash", "slot": "DASH",
+		"text": "A short dodge. You are untouchable mid-dash.",
 		"goal": "dash", "need": 2},
-	{"title": "JAW", "text": "RIGHT CLICK (a quick tap) to bite. It roots you for a beat, so pick your moment - but it hurts, and it makes them bleed.",
+	{"title": "JAW", "key": "RIGHT CLICK", "task": "Bite the rat", "slot": "JAW",
+		"text": "Heavy hit. Roots you for a beat, so pick your moment.",
 		"goal": "bite", "need": 2, "dummies": 1, "dummy_hp": 30},
-	{"title": "TAIL", "text": "HOLD RIGHT CLICK to sweep your tail. Barely any damage - it is for flinging a crowd off you when you get swarmed.",
+	{"title": "TAIL", "key": "HOLD RIGHT CLICK", "task": "Sweep", "slot": "TAIL",
+		"text": "Flings a crowd off you. Barely any damage.",
 		"goal": "tail", "need": 2, "dummies": 2, "dummy_hp": 30},
-	{"title": "LEER", "text": "Press E to LEER. It stuns everything in front of you and MARKS it. Free to use - never hold it back.",
+	{"title": "LEER", "key": "E", "task": "Leer at the rats", "slot": "GLARE",
+		"text": "Stuns and MARKS everything in front of you.",
 		"goal": "glare", "need": 1, "dummies": 2, "dummy_hp": 30},
 	# The only lesson that needs the dummy to actually die, so this one is frail.
-	{"title": "EXECUTE", "text": "Marked prey wears a red chevron. Press E, then kill a marked rat for a bonus EXECUTE.",
+	{"title": "EXECUTE", "key": "E, then LEFT CLICK", "task": "Kill a marked rat", "slot": "GLARE",
+		"text": "Marked rats wear a red chevron. Killing one pays bonus style.",
 		"goal": "execute", "need": 1, "dummies": 2, "dummy_hp": 5},
-	{"title": "PARRY", "text": "Enemies flash their tell before striking. When it turns WHITE, DASH INTO them to freeze them cold.",
+	{"title": "PARRY", "key": "SPACE into the rat", "task": "Parry a lunge", "slot": "DASH",
+		"text": "Its ring flashes WHITE just before it strikes. Dash INTO that.",
 		"goal": "parry", "need": 1, "armed": 1, "dummy_hp": 40},
 ]
 
@@ -1987,6 +2035,9 @@ var tut_mouse_origin: Vector2 = Vector2.ZERO
 var tut_ready_timer: float = 0.0
 var tut_advancing: bool = false
 var tutorial_title: Label
+var tutorial_key: Label
+var tutorial_task: Label
+var tutorial_step_label: Label
 var tutorial_progress: Label
 
 func _build_tutorial_panel() -> void:
@@ -1996,44 +2047,57 @@ func _build_tutorial_panel() -> void:
 	tutorial_panel.name = "TutorialPanel"
 	tutorial_panel.visible = false
 	tutorial_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tutorial_panel.position = Vector2(25, 22)
-	tutorial_panel.size = Vector2(270, 52)
+	# Kept deliberately short and pinned to the top band: the camera centres the
+	# cat at screen y90, so anything taller than this covers the player and the
+	# rat she is supposed to be hitting. Top HUD plates end at y31.
+	tutorial_panel.position = Vector2(20, 32)
+	tutorial_panel.size = Vector2(280, 48)
 	var card := Panel.new()
 	card.set_anchors_preset(Control.PRESET_FULL_RECT)
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_theme_stylebox_override("panel", _panel_box(
 		Color(0.05, 0.07, 0.12, 0.92), Color(1.0, 0.84, 0.35, 0.9)))
 	tutorial_panel.add_child(card)
-	tutorial_title = Label.new()
-	tutorial_title.position = Vector2(7, 3)
-	tutorial_title.size = Vector2(185, 12)
-	tutorial_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tutorial_title.add_theme_font_size_override("font_size", 10)
-	tutorial_title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.35, 1.0))
-	tutorial_title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	tutorial_title.add_theme_constant_override("outline_size", 3)
-	tutorial_panel.add_child(tutorial_title)
-	tutorial_progress = Label.new()
-	tutorial_progress.position = Vector2(198, 3)
-	tutorial_progress.size = Vector2(65, 12)
-	tutorial_progress.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tutorial_progress.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	tutorial_progress.add_theme_font_size_override("font_size", 10)
-	tutorial_progress.add_theme_color_override("font_color", Color(0.5, 1.0, 0.86, 1.0))
-	tutorial_progress.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	tutorial_progress.add_theme_constant_override("outline_size", 3)
-	tutorial_panel.add_child(tutorial_progress)
-	tutorial_text = Label.new()
-	tutorial_text.position = Vector2(7, 16)
-	tutorial_text.size = Vector2(256, 34)
-	tutorial_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Row 1: which lesson this is, and how far through the tutorial you are.
+	tutorial_title = _tut_label(Vector2(7, 1), Vector2(150, 10), 9,
+		Color(1.0, 0.84, 0.35, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	tutorial_step_label = _tut_label(Vector2(160, 1), Vector2(105, 10), 9,
+		Color(0.65, 0.66, 0.78, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	# Row 2: THE KEY. Biggest, brightest thing on the card - if the player reads
+	# one thing, it has to be the button.
+	var key_bg := ColorRect.new()
+	key_bg.name = "KeyStrip"
+	key_bg.position = Vector2(6, 11)
+	key_bg.size = Vector2(268, 15)
+	key_bg.color = Color(0.5, 1.0, 0.95, 0.13)
+	key_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tutorial_panel.add_child(key_bg)
+	tutorial_key = _tut_label(Vector2(7, 11), Vector2(266, 15), 12,
+		Color(0.62, 1.0, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	# Row 3: the task, with its own counter right beside it.
+	tutorial_task = _tut_label(Vector2(7, 27), Vector2(190, 11), 9,
+		Color(1.0, 1.0, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	tutorial_progress = _tut_label(Vector2(198, 27), Vector2(75, 11), 9,
+		Color(0.5, 1.0, 0.86, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	# Row 4: one quiet line of why the move exists.
+	tutorial_text = _tut_label(Vector2(7, 37), Vector2(266, 10), 8,
+		Color(0.78, 0.79, 0.86, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	tutorial_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	tutorial_text.add_theme_font_size_override("font_size", 9)
-	tutorial_text.add_theme_color_override("font_color", Color(0.95, 0.94, 0.86, 1.0))
-	tutorial_text.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
-	tutorial_text.add_theme_constant_override("outline_size", 2)
-	tutorial_panel.add_child(tutorial_text)
 	$UI.add_child(tutorial_panel)
+
+func _tut_label(pos: Vector2, box: Vector2, font_size: int, colour: Color, align: int) -> Label:
+	var label := Label.new()
+	label.position = pos
+	label.size = box
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.horizontal_alignment = align
+	label.add_theme_font_override("font", UI_FONT)
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", colour)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	label.add_theme_constant_override("outline_size", 3)
+	tutorial_panel.add_child(label)
+	return label
 
 func _start_tutorial() -> void:
 	tutorial_active = true
@@ -2050,7 +2114,10 @@ func _begin_tutorial_step() -> void:
 	tut_progress = 0
 	tut_ready_timer = 0.35
 	tutorial_title.text = String(step["title"])
-	tutorial_text.text = String(step["text"])
+	tutorial_step_label.text = "LESSON %d / %d" % [tutorial_step + 1, TUTORIAL_STEPS.size()]
+	tutorial_key.text = String(step.get("key", ""))
+	tutorial_task.text = String(step.get("task", ""))
+	tutorial_text.text = String(step.get("text", ""))
 	tutorial_panel.visible = true
 	var cat := get_tree().get_first_node_in_group("player")
 	if cat != null and is_instance_valid(cat):
@@ -2067,7 +2134,11 @@ func _update_tutorial_progress() -> void:
 	if not tutorial_active or tutorial_step >= TUTORIAL_STEPS.size():
 		return
 	var need := int(TUTORIAL_STEPS[tutorial_step].get("need", 1))
-	tutorial_progress.text = "%d/%d" % [mini(tut_progress, need), need] if need > 1 else ""
+	# Single-rep lessons get a plain nudge instead of a pointless "0/1".
+	if need > 1:
+		tutorial_progress.text = "%d of %d" % [mini(tut_progress, need), need]
+	else:
+		tutorial_progress.text = "try it"
 
 # Practice fodder: enough health to survive the lesson, and (except for the
 # parry step) completely harmless, so nobody dies learning the controls.
@@ -2107,12 +2178,31 @@ func _spawn_tut_dummy(armed: bool, hp: int) -> void:
 	var e := rat_scene.instantiate()
 	if e.has_method("configure"):
 		e.configure(cfg)
-	# Close enough that the lesson starts straight away, not after a long walk.
-	e.position = _spawn_point(38.0)
+	e.position = _tutorial_spawn_point()
 	add_child(e)
+	# Arrow overhead so "hit the rat" points at an unmistakable target.
+	var marker: Node2D = TARGET_MARKER.new()
+	marker.name = "TutorialMarker"
+	e.add_child(marker)
 	tut_dummies.append(e)
 	if e.has_signal("died"):
 		e.died.connect(_on_tut_dummy_died.bind(e))
+
+# Practice targets go BELOW the cat. The camera keeps her at screen centre and
+# the coach card owns the top band, so a target placed anywhere else can end up
+# behind the instructions - which is the fastest way to make a lesson
+# unfollowable. Close enough to reach immediately, too.
+func _tutorial_spawn_point() -> Vector2:
+	var cat := get_tree().get_first_node_in_group("player")
+	var base: Vector2 = cat.global_position if cat != null else (play_min + play_max) * 0.5
+	for i in 20:
+		var angle: float = rng.randf_range(PI * 0.18, PI * 0.82)   # downward arc
+		var distance: float = rng.randf_range(38.0, 58.0)
+		var p := base + Vector2(cos(angle), sin(angle)) * distance
+		if p.x >= play_min.x and p.x <= play_max.x and p.y >= play_min.y and p.y <= play_max.y:
+			return p
+	# Cat is jammed against the bottom wall - fall back to anywhere legal.
+	return _spawn_point(38.0)
 
 func _on_tut_dummy_died(dummy: Node) -> void:
 	tut_dummies.erase(dummy)
